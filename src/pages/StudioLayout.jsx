@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Navigate, Outlet, useOutletContext, useParams } from "react-router-dom";
+import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
-import Sidebar from "../components/Sidebar";
+import Sidebar, { reloadSpecToast } from "../components/Sidebar";
 import { useToast } from "../components/Toast";
 
 function planStorageKey(specId) {
@@ -11,6 +11,8 @@ function planStorageKey(specId) {
 export default function StudioLayout() {
   const { specId } = useParams();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [spec, setSpec] = useState(null);
   const [operations, setOperations] = useState([]);
   const [plans, setPlans] = useState([]);
@@ -65,6 +67,27 @@ export default function StudioLayout() {
     return nextPlans;
   }
 
+  async function reloadSpec(file) {
+    const result = file
+      ? await Api.reloadSpecUpload(specId, file, spec?.baseUrl)
+      : await Api.reloadSpec(specId, spec?.baseUrl ? { baseUrl: spec.baseUrl } : {});
+    const [nextSpec, nextOperations] = await Promise.all([
+      Api.getSpec(specId),
+      Api.listOperations(specId)
+    ]);
+    setSpec(nextSpec);
+    setOperations(nextOperations);
+    const match = location.pathname.match(/\/op\/([^/]+)/);
+    if (match) {
+      const key = decodeURIComponent(match[1]);
+      if (!nextOperations.some((operation) => operation.key === key)) {
+        navigate(`/s/${specId}/cases`, { replace: true });
+      }
+    }
+    toast(reloadSpecToast(result));
+    return result;
+  }
+
   if (error) {
     return <Navigate to="/" replace />;
   }
@@ -86,6 +109,7 @@ export default function StudioLayout() {
         planId={planId}
         onSelectPlan={selectPlan}
         onPlansChange={reloadPlans}
+        onReloadSpec={reloadSpec}
       />
       <main className="main">
         <Outlet context={{ spec, operations, config, plans, plan, planId, selectPlan, reloadPlans }} />

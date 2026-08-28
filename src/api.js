@@ -145,13 +145,29 @@ export const Api = {
     return request("/api/specs", { method: "POST", body: JSON.stringify(payload) });
   },
 
-  async uploadSpec(file, baseUrl) {
+  uploadSpec(file, baseUrl) {
     const data = new FormData();
     data.append("file", file);
     if (baseUrl) {
       data.append("baseUrl", baseUrl);
     }
     return request("/api/specs/upload", { method: "POST", body: data });
+  },
+
+  reloadSpec(specId, payload = {}) {
+    return request(`/api/specs/${encodeURIComponent(specId)}/reload`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  reloadSpecUpload(specId, file, baseUrl) {
+    const data = new FormData();
+    data.append("file", file);
+    if (baseUrl) {
+      data.append("baseUrl", baseUrl);
+    }
+    return request(`/api/specs/${encodeURIComponent(specId)}/reload/upload`, { method: "POST", body: data });
   },
 
   getSpec(specId) {
@@ -212,5 +228,28 @@ export const Api = {
 
   exportCases(payload) {
     return download("/api/testdata/export", payload);
+  },
+
+  generateCases(payload) {
+    return request("/api/testdata/generate", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  generatePlans(payload) {
+    return request("/api/testdata/generate-plans", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  runCase(id, auth) {
+    return request(`/api/testdata/${encodeURIComponent(id)}/run`, {
+      method: "POST",
+      body: JSON.stringify({ auth })
+    });
+  },
+
+  runDraft(payload) {
+    return request("/api/testdata/run", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  runPlan(payload) {
+    return request("/api/testdata/run-plan", { method: "POST", body: JSON.stringify(payload) });
   }
 };

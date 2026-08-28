@@ -1,17 +1,29 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  applyExpectedToJsonPathAssertions,
+  formatAssertionValue,
+  getJsonPathValue,
   hasResponseSchema,
   jsonPathsFromSchema,
+  parseJsonDocument,
   parseJsonPathAssertions,
   serializeJsonPathAssertions
 } from "../schema";
 
-export default function JsonPathAssertionsPicker({ schema, value, onChange }) {
+export default function JsonPathAssertionsPicker({ schema, value, onChange, expectedResponse }) {
   const schemaAvailable = hasResponseSchema(schema);
   const schemaPaths = useMemo(() => jsonPathsFromSchema(schemaAvailable ? schema : null), [schema, schemaAvailable]);
   const saved = useMemo(() => parseJsonPathAssertions(value), [value]);
+  const expected = useMemo(() => parseJsonDocument(expectedResponse), [expectedResponse]);
   const [customPath, setCustomPath] = useState("$.");
   const [filter, setFilter] = useState("");
+
+  useEffect(() => {
+    const next = applyExpectedToJsonPathAssertions(value, expectedResponse);
+    if (next !== value) {
+      onChange(next);
+    }
+  }, [expectedResponse]);
 
   const customPaths = useMemo(() => {
     const known = new Set(schemaPaths.map((item) => item.path));
@@ -19,24 +31,36 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange }) {
   }, [schemaPaths, saved]);
 
   const rows = useMemo(() => {
-    const schemaRows = schemaPaths.map((item) => ({
-      ...item,
-      custom: false,
-      selected: saved.has(item.path),
-      value: saved.has(item.path) && saved.get(item.path) !== "" ? saved.get(item.path) : item.sample
-    }));
-    const extraRows = customPaths.map((path) => ({
-      path,
-      type: "custom",
-      required: false,
-      description: "",
-      sample: "",
-      custom: true,
-      selected: true,
-      value: saved.get(path) || ""
-    }));
+    const schemaRows = schemaPaths.map((item) => {
+      const fromExpected = expected !== undefined ? getJsonPathValue(expected, item.path) : undefined;
+      const derived = fromExpected !== undefined;
+      return {
+        ...item,
+        custom: false,
+        selected: saved.has(item.path),
+        derived,
+        value: derived
+          ? formatAssertionValue(fromExpected)
+          : (saved.has(item.path) && saved.get(item.path) !== "" ? saved.get(item.path) : item.sample)
+      };
+    });
+    const extraRows = customPaths.map((path) => {
+      const fromExpected = expected !== undefined ? getJsonPathValue(expected, path) : undefined;
+      const derived = fromExpected !== undefined;
+      return {
+        path,
+        type: "custom",
+        required: false,
+        description: "",
+        sample: "",
+        custom: true,
+        selected: true,
+        derived,
+        value: derived ? formatAssertionValue(fromExpected) : (saved.get(path) || "")
+      };
+    });
     return [...schemaRows, ...extraRows];
-  }, [schemaPaths, customPaths, saved]);
+  }, [schemaPaths, customPaths, saved, expected]);
 
   const visible = rows.filter((row) => {
     if (!filter.trim()) {
@@ -104,7 +128,10 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange }) {
     <div className="field jsonpath-picker">
       <label>
         JSONPath assertions
-        <span className="hint">{selectedCount} selected of {rows.length} paths</span>
+        <span className="hint">
+          {selectedCount} selected of {rows.length} paths
+          {expected !== undefined ? " · values from Expected response" : ""}
+        </span>
       </label>
       <div className="jsonpath-toolbar">
         <input
@@ -135,7 +162,7 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange }) {
             <input
               placeholder="Value to assert"
               value={row.value}
-              disabled={!row.selected}
+              disabled={!row.selected || row.derived}
               onChange={(event) => updateRow(row.path, { selected: true, value: event.target.value })}
             />
             {row.custom ? (

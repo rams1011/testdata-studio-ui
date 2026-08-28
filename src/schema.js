@@ -28,11 +28,11 @@ export function hasResponseBodySchema(response) {
   if (!response) {
     return false;
   }
-  const type = String(response.responseType || "").toUpperCase();
-  if (type === "NONE" || type === "NA") {
-    return false;
+  if (hasResponseSchema(response.jsonSchema)) {
+    return true;
   }
-  return hasResponseSchema(response.jsonSchema);
+  const type = String(response.responseType || "").toUpperCase();
+  return type === "JSON";
 }
 
 export function schemaType(schema) {
@@ -134,8 +134,6 @@ export function coerce(raw, type, schema) {
 
 export function inputType(schema, type) {
   const format = schema && schema.format;
-  if (format === "date") return "date";
-  if (format === "date-time") return "datetime-local";
   if (format === "email") return "email";
   if (format === "password") return "password";
   if (type === "integer" || type === "number") return "number";
@@ -256,7 +254,7 @@ function leafPath(path, schema, required) {
   };
 }
 
-function formatAssertionValue(value) {
+export function formatAssertionValue(value) {
   if (value == null) {
     return "";
   }
@@ -264,4 +262,90 @@ function formatAssertionValue(value) {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+export function parseJsonDocument(value) {
+  if (value == null) {
+    return undefined;
+  }
+  const text = String(value).trim();
+  if (!text || text.toUpperCase() === "NA") {
+    return undefined;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+export function getJsonPathValue(root, jsonPath) {
+  if (root === undefined || root === null || !jsonPath) {
+    return undefined;
+  }
+  const path = String(jsonPath).trim();
+  if (path === "$") {
+    return root;
+  }
+  if (!path.startsWith("$")) {
+    return undefined;
+  }
+  let current = root;
+  let index = 1;
+  while (index < path.length) {
+    if (current == null) {
+      return undefined;
+    }
+    const ch = path[index];
+    if (ch === ".") {
+      index += 1;
+      const match = path.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+      if (!match) {
+        return undefined;
+      }
+      current = current[match[0]];
+      index += match[0].length;
+      continue;
+    }
+    if (ch === "[") {
+      const close = path.indexOf("]", index);
+      if (close < 0) {
+        return undefined;
+      }
+      const token = path.slice(index + 1, close);
+      if ((token.startsWith("'") && token.endsWith("'")) || (token.startsWith("\"") && token.endsWith("\""))) {
+        current = current[token.slice(1, -1).replace(/\\'/g, "'")];
+      } else if (/^\d+$/.test(token)) {
+        current = current[Number(token)];
+      } else {
+        return undefined;
+      }
+      index = close + 1;
+      continue;
+    }
+    return undefined;
+  }
+  return current;
+}
+
+export function applyExpectedToJsonPathAssertions(serialized, expectedResponse) {
+  const document = parseJsonDocument(expectedResponse);
+  if (document === undefined) {
+    return serialized;
+  }
+  const saved = parseJsonPathAssertions(serialized);
+  if (saved.size === 0) {
+    return serialized;
+  }
+  const next = [];
+  let changed = false;
+  saved.forEach((oldValue, path) => {
+    const extracted = getJsonPathValue(document, path);
+    const value = extracted !== undefined ? formatAssertionValue(extracted) : oldValue;
+    if (value !== oldValue) {
+      changed = true;
+    }
+    next.push({ path, selected: true, value });
+  });
+  return changed ? serializeJsonPathAssertions(next) : serialized;
 }

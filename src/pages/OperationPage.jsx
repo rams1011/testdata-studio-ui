@@ -4,9 +4,12 @@ import { Api } from "../api";
 import SchemaForm from "../components/SchemaForm";
 import JsonPathAssertionsPicker from "../components/JsonPathAssertionsPicker";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
+import AuthSettings, { useSpecAuth } from "../components/AuthSettings";
+import RunResultPanel from "../components/RunResultPanel";
 import { useToast } from "../components/Toast";
 import { hasResponseBodySchema, sampleFromSchema } from "../schema";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
+import { generateToast } from "./CasesPage";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
@@ -17,6 +20,9 @@ export default function OperationPage() {
   const [cases, setCases] = useState([]);
   const [form, setForm] = useState(null);
   const [requestBody, setRequestBody] = useState({});
+  const [auth, setAuth] = useSpecAuth(specId);
+  const [runResult, setRunResult] = useState(null);
+  const [running, setRunning] = useState(null);
 
   useEffect(() => {
     if (!planId) return;
@@ -35,6 +41,7 @@ export default function OperationPage() {
       setCases(nextCases);
       setForm(existing ? formFromCase(existing) : formFromOperation(nextOperation, spec));
       setRequestBody(existing?.requestBody ?? nextOperation.requestBody?.sample ?? sampleFromSchema(nextOperation.requestBody?.jsonSchema));
+      setRunResult(null);
     }).catch((error) => toast(error.message, true));
     return () => { cancelled = true; };
   }, [specId, operationKey, caseId, spec, planId, toast, navigate]);
@@ -57,7 +64,20 @@ export default function OperationPage() {
   }, [operation, form?.statusCode]);
 
   async function save() {
-    const payload = {
+    const payload = casePayload();
+    try {
+      const saved = caseId
+        ? await Api.updateCase(caseId, payload)
+        : await Api.createCase(payload);
+      toast(caseId ? "Test case updated" : "Test case saved");
+      navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${saved.id}`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  function casePayload() {
+    return {
       specId,
       planId,
       operationKey: operation.key,
@@ -66,12 +86,45 @@ export default function OperationPage() {
       maxResponseTimeMs: Number(form.maxResponseTimeMs),
       requestBody: operation.requestBody ? requestBody : null
     };
+  }
+
+  async function runCurrent() {
+    setRunning("current");
     try {
-      const saved = caseId
-        ? await Api.updateCase(caseId, payload)
-        : await Api.createCase(payload);
-      toast(caseId ? "Test case updated" : "Test case saved");
-      navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${saved.id}`);
+      const result = await Api.runDraft({ testCase: casePayload(), auth });
+      setRunResult(result);
+      toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  async function runSaved(id) {
+    setRunning(id);
+    try {
+      const result = await Api.runCase(id, auth);
+      setRunResult(result);
+      toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  async function generate() {
+    try {
+      const result = await Api.generateCases({
+        specId,
+        planId,
+        operationKey: operation.key,
+        includePositive: true,
+        includeNegative: true
+      });
+      setCases(await Api.listCases(specId, operationKey, planId));
+      toast(generateToast(result));
     } catch (error) {
       toast(error.message, true);
     }
@@ -119,8 +172,14 @@ export default function OperationPage() {
           </div>
         </div>
         <div className="actions">
+          <button type="button" className="btn" onClick={generate}>
+            Generate cases
+          </button>
           <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
             New case
+          </button>
+          <button type="button" className="btn" onClick={runCurrent} disabled={!!running}>
+            {running === "current" ? "Running…" : "Run"}
           </button>
           <button type="button" className="btn primary" onClick={save}>
             {caseId ? "Update test case" : "Save test case"}
@@ -131,7 +190,9 @@ export default function OperationPage() {
 
       <div className="grid">
         <div>
-          <div className="card">
+          <AuthSettings auth={auth} onChange={setAuth} />
+
+          <div className="card" style={{ marginTop: 16 }}>
             <h3>Test case</h3>
             <Field label="Test name" value={form.testName} onChange={(testName) => setForm({ ...form, testName })} />
             <div className="row-2">
@@ -150,11 +211,6 @@ export default function OperationPage() {
               <Field label="Max response ms" type="number" value={form.maxResponseTimeMs} onChange={(maxResponseTimeMs) => setForm({ ...form, maxResponseTimeMs })} />
             </div>
             <Field label="Content type" value={form.contentType} onChange={(contentType) => setForm({ ...form, contentType })} />
-            <JsonPathAssertionsPicker
-              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
-              value={form.jsonPathAssertions}
-              onChange={(jsonPathAssertions) => setForm({ ...form, jsonPathAssertions })}
-            />
             <ExpectedResponseEditor
               schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
               sample={hasResponseBodySchema(operation.response) ? operation.response.sample : null}
@@ -164,6 +220,12 @@ export default function OperationPage() {
                 ...current,
                 responseType: current.responseType === "NONE" || current.responseType === "NA" ? "JSON" : current.responseType
               }))}
+            />
+            <JsonPathAssertionsPicker
+              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
+              expectedResponse={form.expectedResponse}
+              value={form.jsonPathAssertions}
+              onChange={(jsonPathAssertions) => setForm((current) => ({ ...current, jsonPathAssertions }))}
             />
           </div>
 
@@ -195,7 +257,9 @@ export default function OperationPage() {
           </div>
         </div>
 
-        <div className="card">
+        <div>
+          <RunResultPanel result={runResult} />
+          <div className="card" style={{ marginTop: runResult ? 16 : 0 }}>
           <h3>JSON preview</h3>
           <pre className="json-preview">
             {operation.requestBody ? JSON.stringify(requestBody, null, 2) : "NA"}
@@ -212,6 +276,9 @@ export default function OperationPage() {
                     <div className="hint">{item.method} {item.endpoint}</div>
                   </div>
                   <div className="inline-actions">
+                    <button type="button" className="btn" onClick={() => runSaved(item.id)} disabled={!!running}>
+                      {running === item.id ? "Running…" : "Run"}
+                    </button>
                     <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${item.id}`)}>
                       Edit
                     </button>
@@ -222,6 +289,7 @@ export default function OperationPage() {
                 </div>
               </div>
             ))}
+          </div>
           </div>
         </div>
       </div>

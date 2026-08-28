@@ -32,6 +32,8 @@ Open [http://localhost:5173](http://localhost:5173). The home page checks `GET /
 | Open a saved spec | `GET /api/specs/{id}` and `GET /api/specs/{id}/operations` |
 | Operation form | `GET /api/specs/{id}/operations/{key}` |
 | Save / update / delete case | `POST` `PUT` `DELETE /api/testdata` |
+| Generate positive / negative cases | `POST /api/testdata/generate` |
+| Generate Smoke / Negative plans | `POST /api/testdata/generate-plans` |
 | Export Excel | `POST /api/testdata/export` |
 
 To call the API directly instead of the proxy, set `VITE_API_BASE=http://localhost:8083` in `.env` and restart `npm run dev`.

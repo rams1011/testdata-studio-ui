@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_DISPLAY, Api } from "../api";
 import { useToast } from "../components/Toast";
+import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
 
 export default function LoadSpecPage() {
   const navigate = useNavigate();
@@ -11,7 +12,10 @@ export default function LoadSpecPage() {
   const [paste, setPaste] = useState("");
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [reloadingId, setReloadingId] = useState("");
   const [backend, setBackend] = useState({ status: "checking", specs: [] });
+  const reloadFileRef = useRef(null);
+  const reloadTargetRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +65,39 @@ export default function LoadSpecPage() {
     }
   }
 
+  async function refreshSpecs() {
+    const specs = await Api.listSpecs();
+    setBackend((current) => ({ ...current, specs: specs || [] }));
+  }
+
+  async function reloadExisting(spec, file) {
+    setReloadingId(spec.specId);
+    try {
+      const result = file
+        ? await Api.reloadSpecUpload(spec.specId, file, spec.baseUrl)
+        : await Api.reloadSpec(spec.specId, spec.baseUrl ? { baseUrl: spec.baseUrl } : {});
+      await refreshSpecs();
+      toast(reloadSpecToast(result));
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setReloadingId("");
+    }
+  }
+
+  function startReload(spec, event) {
+    event.stopPropagation();
+    if (spec.sourceLocation) {
+      if (!window.confirm(RELOAD_SPEC_CONFIRM)) {
+        return;
+      }
+      reloadExisting(spec);
+      return;
+    }
+    reloadTargetRef.current = spec;
+    reloadFileRef.current?.click();
+  }
+
   return (
     <div className="hero">
       <h1>Test Data Studio</h1>
@@ -90,7 +127,7 @@ export default function LoadSpecPage() {
           <table className="table">
             <thead>
               <tr>
-                {["Title", "Operations", "Base URL"].map((text) => <th key={text}>{text}</th>)}
+                {["Title", "Operations", "Base URL", ""].map((text) => <th key={text}>{text}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -103,10 +140,38 @@ export default function LoadSpecPage() {
                   <td>{spec.title}</td>
                   <td>{spec.operationCount}</td>
                   <td>{spec.baseUrl}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={!!reloadingId}
+                      onClick={(event) => startReload(spec, event)}
+                    >
+                      {reloadingId === spec.specId ? "Reloading…" : "Reload"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <input
+            ref={reloadFileRef}
+            type="file"
+            accept=".json,.yaml,.yml"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              const spec = reloadTargetRef.current;
+              event.target.value = "";
+              reloadTargetRef.current = null;
+              if (file && spec) {
+                if (!window.confirm(RELOAD_SPEC_CONFIRM)) {
+                  return;
+                }
+                reloadExisting(spec, file);
+              }
+            }}
+          />
         </div>
       ) : null}
 

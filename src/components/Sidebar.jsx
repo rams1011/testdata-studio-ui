@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { NavLink, useParams } from "react-router-dom";
+import { useRef, useState } from "react";
+import { NavLink, useNavigate, useParams } from "react-router-dom";
 import { Api } from "../api";
 import { useToast } from "./Toast";
+import { generatePlansToast } from "../pages/CasesPage";
 
 export default function Sidebar({
   spec,
@@ -12,11 +13,16 @@ export default function Sidebar({
   plans,
   planId,
   onSelectPlan,
-  onPlansChange
+  onPlansChange,
+  onReloadSpec
 }) {
   const { specId } = useParams();
+  const navigate = useNavigate();
   const { toast } = useToast();
+  const fileRef = useRef(null);
   const [newPlanName, setNewPlanName] = useState("");
+  const [includeNegativePlan, setIncludeNegativePlan] = useState(true);
+  const [reloading, setReloading] = useState(false);
   const grouped = groupOperations(
     operations.filter((operation) => matchesSearch(operation, search))
   );
@@ -55,6 +61,42 @@ export default function Sidebar({
     }
   }
 
+  async function generatePlans() {
+    try {
+      const result = await Api.generatePlans({
+        specId,
+        includeNegative: includeNegativePlan
+      });
+      await onPlansChange(result.smokePlan.id);
+      toast(generatePlansToast(result));
+      navigate(`/s/${specId}/cases`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function reloadSpec(file) {
+    if (!window.confirm(RELOAD_SPEC_CONFIRM)) {
+      return;
+    }
+    setReloading(true);
+    try {
+      await onReloadSpec(file);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setReloading(false);
+    }
+  }
+
+  function chooseReloadSource() {
+    if (spec?.sourceLocation) {
+      reloadSpec();
+      return;
+    }
+    fileRef.current?.click();
+  }
+
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -69,6 +111,20 @@ export default function Sidebar({
         {config?.storageType ? (
           <div className="sub">API storage: {config.storageType}</div>
         ) : null}
+        <button type="button" className="btn ghost" style={{ marginTop: 10 }} onClick={chooseReloadSource} disabled={reloading}>
+          {reloading ? "Reloading…" : "Reload spec"}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,.yaml,.yml"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) reloadSpec(file);
+          }}
+        />
       </div>
       <div className="plan-picker">
         <label htmlFor="plan-select">Test plan</label>
@@ -91,6 +147,19 @@ export default function Sidebar({
         <button type="button" className="btn ghost" onClick={removePlan} disabled={plans.length <= 1}>
           Delete plan
         </button>
+        <div className="plan-generate">
+          <button type="button" className="btn primary" onClick={generatePlans}>
+            Generate Smoke plan
+          </button>
+          <label className="plan-check">
+            <input
+              type="checkbox"
+              checked={includeNegativePlan}
+              onChange={(event) => setIncludeNegativePlan(event.target.checked)}
+            />
+            Also Negative plan
+          </label>
+        </div>
       </div>
       <div className="side-search">
         <input
@@ -147,3 +216,24 @@ function matchesSearch(operation, search) {
   const haystack = `${operation.method} ${operation.path} ${operation.summary} ${operation.tag} ${operation.key}`.toLowerCase();
   return haystack.includes(search.toLowerCase());
 }
+
+export function reloadSpecToast(result) {
+  const added = result?.addedOperations?.length ?? 0;
+  const removed = result?.removedOperations?.length ?? 0;
+  const orphaned = result?.orphanedCaseCount ?? 0;
+  let message = `Spec reloaded (${result?.spec?.operationCount ?? 0} operations)`;
+  if (added) {
+    message += `. +${added} new`;
+  }
+  if (removed) {
+    message += `. ${removed} removed`;
+  }
+  if (orphaned) {
+    message += `. ${orphaned} saved cases still point at removed operations`;
+  }
+  return message;
+}
+
+export const RELOAD_SPEC_CONFIRM =
+  "Reload the OpenAPI document in place?\n\nPlans and saved cases are kept. Operation forms pick up the new schema. Cases for operations that disappear stay in the plan but cannot be opened until you delete them or restore that operation.";
+
