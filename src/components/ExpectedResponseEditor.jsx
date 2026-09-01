@@ -22,7 +22,7 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
   }
 
   function clear() {
-    onChange("NA");
+    onChange("");
     setShowForm(false);
   }
 
@@ -30,7 +30,7 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
     <div className="field expected-response">
       <label>
         Expected response
-        <span className="hint">{canBuild ? "Build a JSON body from the response schema, then edit values" : "No response schema"}</span>
+        <span className="hint">{canBuild ? "Optional JSON body to compare. Leave blank if you only check status." : "No response schema"}</span>
       </label>
       <div className="jsonpath-toolbar">
         <button type="button" className="btn primary" onClick={buildFromSchema} disabled={!canBuild}>
@@ -63,9 +63,9 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
       ) : null}
       {canBuild || isJsonValue(value) ? (
         <textarea
-          value={value}
+          value={blankNa(value)}
           onChange={(event) => onChange(event.target.value)}
-          placeholder="NA or JSON response body"
+          placeholder="Leave blank if none"
           style={{ minHeight: 140 }}
         />
       ) : null}
@@ -75,6 +75,12 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
 
 function isJsonValue(value) {
   return parseExpected(value) != null;
+}
+
+function blankNa(value) {
+  if (value == null) return "";
+  const text = String(value).trim();
+  return text.toUpperCase() === "NA" ? "" : value;
 }
 
 function parseExpected(value) {
@@ -94,7 +100,7 @@ function parseExpected(value) {
 
 function stringify(value) {
   if (value == null) {
-    return "NA";
+    return "";
   }
   if (typeof value === "string") {
     return value;

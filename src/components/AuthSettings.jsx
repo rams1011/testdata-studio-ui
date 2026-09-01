@@ -64,12 +64,22 @@ export default function AuthSettings({ auth, onChange }) {
     onChange({ ...auth, ...fields });
   }
 
+  const typeLabel = AUTH_TYPES.find((item) => item.value === type)?.label || type;
+
   return (
-    <div className="card">
-      <h3>Run authentication</h3>
-      <p className="hint" style={{ marginTop: -8, marginBottom: 12 }}>
-        Applied at run time only — not saved with the case. Use None when a case already sets Authorization (for example 401 tests).
+    <details className="card auth-card" defaultOpen={type !== "NONE"}>
+      <summary>
+        Run authentication
+        <span className="hint">{type === "NONE" ? "Off — click to add credentials" : typeLabel}</span>
+      </summary>
+      <p className="hint" style={{ marginTop: 8, marginBottom: 12 }}>
+        Used only when you click Run — not saved with the case. Choose None for 401 tests that already set Authorization.
       </p>
+      {type === "NONE" ? (
+        <p className="hint" style={{ marginBottom: 12 }}>
+          If this API needs login, add credentials before Run. A 401 usually means auth is missing.
+        </p>
+      ) : null}
       <div className="field">
         <label>Auth type</label>
         <select value={type} onChange={(event) => patch({ type: event.target.value })}>
@@ -140,6 +150,6 @@ export default function AuthSettings({ auth, onChange }) {
           </div>
         </>
       ) : null}
-    </div>
+    </details>
   );
 }

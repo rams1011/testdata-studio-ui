@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useBlocker, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
 import SchemaForm from "../components/SchemaForm";
 import JsonPathAssertionsPicker from "../components/JsonPathAssertionsPicker";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
 import AuthSettings, { useSpecAuth } from "../components/AuthSettings";
 import RunResultPanel from "../components/RunResultPanel";
+import Collapsible from "../components/Collapsible";
+import StatusCodeField from "../components/StatusCodeField";
 import { useToast } from "../components/Toast";
 import { hasResponseBodySchema, sampleFromSchema } from "../schema";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { generateToast } from "./CasesPage";
+import { lastOpKey } from "./StudioLayout";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
@@ -23,6 +26,11 @@ export default function OperationPage() {
   const [auth, setAuth] = useSpecAuth(specId);
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(null);
+  const baseline = useRef("");
+
+  useEffect(() => {
+    sessionStorage.setItem(lastOpKey(specId), operationKey);
+  }, [specId, operationKey]);
 
   useEffect(() => {
     if (!planId) return;
@@ -39,12 +47,39 @@ export default function OperationPage() {
       }
       setOperation(nextOperation);
       setCases(nextCases);
-      setForm(existing ? formFromCase(existing) : formFromOperation(nextOperation, spec));
-      setRequestBody(existing?.requestBody ?? nextOperation.requestBody?.sample ?? sampleFromSchema(nextOperation.requestBody?.jsonSchema));
+      const nextForm = existing ? formFromCase(existing) : formFromOperation(nextOperation, spec);
+      const nextBody = existing?.requestBody
+        ?? nextOperation.requestBody?.sample
+        ?? sampleFromSchema(nextOperation.requestBody?.jsonSchema);
+      setForm(nextForm);
+      setRequestBody(nextBody);
       setRunResult(null);
+      baseline.current = snapshot(nextForm, nextBody);
     }).catch((error) => toast(error.message, true));
     return () => { cancelled = true; };
   }, [specId, operationKey, caseId, spec, planId, toast, navigate]);
+
+  const dirty = form ? snapshot(form, requestBody) !== baseline.current : false;
+  const blocker = useBlocker(dirty);
+
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    if (window.confirm("Discard unsaved changes?")) {
+      blocker.proceed();
+    } else {
+      blocker.reset();
+    }
+  }, [blocker]);
+
+  useEffect(() => {
+    function onLeave(event) {
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [dirty]);
 
   const paramGroups = useMemo(() => {
     if (!operation) return { path: [], query: [], header: [] };
@@ -69,6 +104,7 @@ export default function OperationPage() {
       const saved = caseId
         ? await Api.updateCase(caseId, payload)
         : await Api.createCase(payload);
+      baseline.current = snapshot(form, requestBody);
       toast(caseId ? "Test case updated" : "Test case saved");
       navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${saved.id}`);
     } catch (error) {
@@ -82,6 +118,9 @@ export default function OperationPage() {
       planId,
       operationKey: operation.key,
       ...form,
+      expectedResponse: form.expectedResponse || "NA",
+      jsonPathAssertions: form.jsonPathAssertions || "NA",
+      contentType: form.contentType || "NA",
       statusCode: Number(form.statusCode),
       maxResponseTimeMs: Number(form.maxResponseTimeMs),
       requestBody: operation.requestBody ? requestBody : null
@@ -159,9 +198,11 @@ export default function OperationPage() {
     return <div className="empty">Loading operation schema…</div>;
   }
 
+  const authCue = runResult && !runResult.passed && runResult.actualStatus === 401 && (auth?.type || "NONE") === "NONE";
+
   return (
-    <div>
-      <div className="topbar">
+    <div className="op-page">
+      <div className="topbar sticky-actions">
         <div>
           <div className="crumb">{plan?.name ? `${plan.name} · ` : ""}{operation.tag} · {operation.key}</div>
           <h2>{operation.summary || operation.key}</h2>
@@ -169,11 +210,12 @@ export default function OperationPage() {
             <span className={`method ${operation.method}`}>{operation.method}</span>
             {"  "}
             {operation.path}
+            {dirty ? " · unsaved" : ""}
           </div>
         </div>
         <div className="actions">
           <button type="button" className="btn" onClick={generate}>
-            Generate cases
+            Generate for this operation
           </button>
           <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
             New case
@@ -182,11 +224,14 @@ export default function OperationPage() {
             {running === "current" ? "Running…" : "Run"}
           </button>
           <button type="button" className="btn primary" onClick={save}>
-            {caseId ? "Update test case" : "Save test case"}
+            {caseId ? "Update" : "Save"}
           </button>
         </div>
       </div>
       {operation.description ? <p className="crumb">{operation.description}</p> : null}
+      {authCue ? (
+        <div className="status-banner down">API returned 401. Add run authentication if this endpoint needs login.</div>
+      ) : null}
 
       <div className="grid">
         <div>
@@ -201,46 +246,35 @@ export default function OperationPage() {
             </div>
             <Field label="Base URL" value={form.baseUrl} onChange={(baseUrl) => setForm({ ...form, baseUrl })} />
             <div className="row-3">
-              <SelectField
-                label="Expected status"
-                value={String(form.statusCode)}
+              <StatusCodeField
+                value={form.statusCode}
                 options={statusOptions}
-                onChange={(statusCode) => setForm({ ...form, statusCode: Number(statusCode) })}
+                onChange={(statusCode) => setForm({ ...form, statusCode })}
               />
-              <SelectField label="Response type" value={form.responseType} options={["JSON", "NONE", "STRING", "FILE", "NA"]} onChange={(responseType) => setForm({ ...form, responseType })} />
+              <SelectField
+                label="Response type"
+                value={form.responseType}
+                options={["JSON", "NONE", "STRING", "FILE"]}
+                onChange={(responseType) => setForm({ ...form, responseType })}
+              />
               <Field label="Max response ms" type="number" value={form.maxResponseTimeMs} onChange={(maxResponseTimeMs) => setForm({ ...form, maxResponseTimeMs })} />
             </div>
-            <Field label="Content type" value={form.contentType} onChange={(contentType) => setForm({ ...form, contentType })} />
-            <ExpectedResponseEditor
-              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
-              sample={hasResponseBodySchema(operation.response) ? operation.response.sample : null}
-              value={form.expectedResponse}
-              onChange={(expectedResponse) => setForm((current) => ({ ...current, expectedResponse }))}
-              onBuilt={() => setForm((current) => ({
-                ...current,
-                responseType: current.responseType === "NONE" || current.responseType === "NA" ? "JSON" : current.responseType
-              }))}
-            />
-            <JsonPathAssertionsPicker
-              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
-              expectedResponse={form.expectedResponse}
-              value={form.jsonPathAssertions}
-              onChange={(jsonPathAssertions) => setForm((current) => ({ ...current, jsonPathAssertions }))}
+            <Field
+              label="Content type"
+              hint="Leave blank if none"
+              value={blankNa(form.contentType)}
+              onChange={(contentType) => setForm({ ...form, contentType })}
             />
           </div>
 
-          <div className="card" style={{ marginTop: 16 }}>
-            <h3>Parameters from schema</h3>
-            {!operation.parameters?.length ? (
-              <div className="empty">No path, query, or header parameters.</div>
-            ) : (
-              <>
-                <ParamGroup label="Path" parameters={paramGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
-                <ParamGroup label="Query" parameters={paramGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
-                <ParamGroup label="Headers" parameters={paramGroups.header} values={form.headers} onChange={(headers) => setForm({ ...form, headers })} />
-              </>
-            )}
-          </div>
+          {operation.parameters?.length ? (
+            <div className="card" style={{ marginTop: 16 }}>
+              <h3>Parameters</h3>
+              <ParamGroup label="Path" parameters={paramGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
+              <ParamGroup label="Query" parameters={paramGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
+              <ParamGroup label="Headers" parameters={paramGroups.header} values={form.headers} onChange={(headers) => setForm({ ...form, headers })} />
+            </div>
+          ) : null}
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Request body</h3>
@@ -252,22 +286,46 @@ export default function OperationPage() {
                 onChange={setRequestBody}
               />
             ) : (
-              <div className="empty">This operation has no request body schema.</div>
+              <div className="empty">This operation has no request body.</div>
             )}
           </div>
+
+          <Collapsible title="Expected response" hint="Optional">
+            <ExpectedResponseEditor
+              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
+              sample={hasResponseBodySchema(operation.response) ? operation.response.sample : null}
+              value={form.expectedResponse}
+              onChange={(expectedResponse) => setForm((current) => ({ ...current, expectedResponse }))}
+              onBuilt={() => setForm((current) => ({
+                ...current,
+                responseType: current.responseType === "NONE" ? "JSON" : current.responseType
+              }))}
+            />
+          </Collapsible>
+
+          <Collapsible title="JSONPath assertions" hint="Off until you pick paths">
+            <JsonPathAssertionsPicker
+              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
+              expectedResponse={form.expectedResponse}
+              value={form.jsonPathAssertions}
+              onChange={(jsonPathAssertions) => setForm((current) => ({ ...current, jsonPathAssertions }))}
+            />
+          </Collapsible>
         </div>
 
         <div>
           <RunResultPanel result={runResult} />
-          <div className="card" style={{ marginTop: runResult ? 16 : 0 }}>
-          <h3>JSON preview</h3>
-          <pre className="json-preview">
-            {operation.requestBody ? JSON.stringify(requestBody, null, 2) : "NA"}
-          </pre>
-          <div style={{ marginTop: 18 }}>
+          <Collapsible title="JSON preview" hint="Request body">
+            <pre className="json-preview">
+              {operation.requestBody ? JSON.stringify(requestBody, null, 2) : "No request body"}
+            </pre>
+          </Collapsible>
+          <div className="card" style={{ marginTop: 16 }}>
             <h3>Saved for this operation</h3>
             {!cases.length ? (
-              <div className="empty">No test cases saved yet.</div>
+              <div className="empty">
+                No cases yet. Generate for this operation, or Save the form.
+              </div>
             ) : cases.map((item) => (
               <div className="array-item" key={item.id}>
                 <div className="array-toolbar">
@@ -290,26 +348,35 @@ export default function OperationPage() {
               </div>
             ))}
           </div>
-          </div>
         </div>
       </div>
     </div>
   );
 }
 
+function snapshot(form, requestBody) {
+  return JSON.stringify({ form, requestBody });
+}
+
+function blankNa(value) {
+  if (value == null) return "";
+  return String(value).trim().toUpperCase() === "NA" ? "" : value;
+}
+
 function formFromOperation(operation, spec) {
   const defaults = operation.defaults || {};
+  const statusCode = operation.response ? operation.response.statusCode : 200;
   return {
-    testName: defaults.testName || operation.summary || "",
+    testName: `${operation.summary || operation.key} — ${statusCode}`,
     testGroup: defaults.testGroup || operation.tag || "generated",
     baseUrl: defaults.baseUrl || spec.baseUrl || "",
     enabled: defaults.enabled || "Y",
-    statusCode: operation.response ? operation.response.statusCode : 200,
-    responseType: defaults.responseType || "NONE",
+    statusCode,
+    responseType: defaults.responseType && defaults.responseType !== "NA" ? defaults.responseType : "NONE",
     maxResponseTimeMs: defaults.maxResponseTimeMs || 3000,
-    expectedResponse: "NA",
-    jsonPathAssertions: operation.response?.jsonPathAssertions || "NA",
-    contentType: defaults.contentType || "NA",
+    expectedResponse: "",
+    jsonPathAssertions: "",
+    contentType: blankNa(defaults.contentType),
     pathParams: mapParams(operation.parameters, "path"),
     queryParams: mapParams(operation.parameters, "query"),
     headers: mapParams(operation.parameters, "header")
@@ -323,11 +390,11 @@ function formFromCase(testCase) {
     baseUrl: testCase.baseUrl || "",
     enabled: testCase.enabled || "Y",
     statusCode: testCase.statusCode,
-    responseType: testCase.responseType || "NONE",
+    responseType: testCase.responseType && testCase.responseType !== "NA" ? testCase.responseType : "NONE",
     maxResponseTimeMs: testCase.maxResponseTimeMs || 3000,
-    expectedResponse: testCase.expectedResponse || "NA",
-    jsonPathAssertions: testCase.jsonPathAssertions || "NA",
-    contentType: testCase.contentType || "NA",
+    expectedResponse: blankNa(testCase.expectedResponse),
+    jsonPathAssertions: blankNa(testCase.jsonPathAssertions),
+    contentType: blankNa(testCase.contentType),
     pathParams: testCase.pathParams || {},
     queryParams: testCase.queryParams || {},
     headers: testCase.headers || {}
@@ -344,10 +411,13 @@ function mapParams(parameters, location) {
   return result;
 }
 
-function Field({ label, value, onChange, type = "text" }) {
+function Field({ label, value, onChange, type = "text", hint }) {
   return (
     <div className="field">
-      <label>{label}</label>
+      <label>
+        {label}
+        {hint ? <span className="hint">{hint}</span> : null}
+      </label>
       <input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
@@ -371,7 +441,7 @@ function ParamGroup({ label, parameters, values, onChange }) {
   if (!parameters.length) return null;
   return (
     <>
-      <div className="tag-label" style={{ color: "#5c6b7a" }}>{label}</div>
+      <div className="tag-label" style={{ color: "#696969" }}>{label}</div>
       {parameters.map((parameter) => (
         <div className="field" key={parameter.name}>
           <label>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
 import AuthSettings, { useSpecAuth } from "../components/AuthSettings";
@@ -7,7 +7,7 @@ import { useToast } from "../components/Toast";
 
 export default function CasesPage() {
   const { specId } = useParams();
-  const { spec, plan, planId, reloadPlans } = useOutletContext();
+  const { spec, plan, planId, reloadPlans, reloadCases } = useOutletContext();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [cases, setCases] = useState([]);
@@ -19,6 +19,10 @@ export default function CasesPage() {
   const [runById, setRunById] = useState({});
   const [selectedResult, setSelectedResult] = useState(null);
   const [planSummary, setPlanSummary] = useState(null);
+  const [filter, setFilter] = useState("");
+  const [methodFilter, setMethodFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [selected, setSelected] = useState({});
 
   useEffect(() => {
     if (!planId) return;
@@ -26,7 +30,37 @@ export default function CasesPage() {
     setRunById({});
     setSelectedResult(null);
     setPlanSummary(null);
+    setSelected({});
   }, [specId, planId, toast]);
+
+  const methods = useMemo(
+    () => [...new Set(cases.map((item) => item.method).filter(Boolean))].sort(),
+    [cases]
+  );
+  const statuses = useMemo(
+    () => [...new Set(cases.map((item) => String(item.statusCode)))].sort(),
+    [cases]
+  );
+
+  const visible = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    return cases.filter((item) => {
+      if (methodFilter && item.method !== methodFilter) return false;
+      if (statusFilter && String(item.statusCode) !== statusFilter) return false;
+      if (!needle) return true;
+      const haystack = `${item.testName} ${item.method} ${item.endpoint} ${item.testGroup} ${item.statusCode}`.toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [cases, filter, methodFilter, statusFilter]);
+
+  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+
+  async function refresh() {
+    const next = await Api.listCases(specId, undefined, planId);
+    setCases(next);
+    await reloadCases?.();
+    return next;
+  }
 
   async function generate() {
     if (!includePositive && !includeNegative) {
@@ -45,7 +79,7 @@ export default function CasesPage() {
         includePositive,
         includeNegative
       });
-      setCases(await Api.listCases(specId, undefined, planId));
+      await refresh();
       toast(generateToast(result));
     } catch (error) {
       toast(error.message, true);
@@ -112,34 +146,81 @@ export default function CasesPage() {
     }
   }
 
+  async function exportPlan() {
+    try {
+      const downloaded = await Api.exportCases({
+        specId,
+        planId,
+        excelFileName: `${plan?.name || "plan"}.xlsx`
+      });
+      toast(`Downloaded ${downloaded.fileName}`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function bulkEnabled(enabled) {
+    if (!selectedIds.length) return;
+    try {
+      await Promise.all(selectedIds.map((id) => {
+        const item = cases.find((row) => row.id === id);
+        return item ? Api.updateCase(id, caseUpdate(item, { enabled })) : null;
+      }));
+      setSelected({});
+      await refresh();
+      toast(enabled === "N" ? "Disabled selected cases" : "Enabled selected cases");
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function bulkDelete() {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Delete ${selectedIds.length} selected case${selectedIds.length === 1 ? "" : "s"}?`)) {
+      return;
+    }
+    try {
+      await Promise.all(selectedIds.map((id) => Api.deleteCase(id)));
+      setSelected({});
+      await refresh();
+      toast("Deleted selected cases");
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  const authCue = selectedResult && !selectedResult.passed && selectedResult.actualStatus === 401
+    && (auth?.type || "NONE") === "NONE";
+
   return (
     <div>
       <div className="topbar">
         <div>
-          <div className="crumb">{spec.title}{plan?.name ? ` · ${plan.name}` : ""}</div>
-          <h2>Saved test cases</h2>
+          <div className="crumb">{spec.name || spec.title}{plan?.name ? ` · ${plan.name}` : ""}</div>
+          <h2>Cases</h2>
+          <p className="hint" style={{ marginTop: 6 }}>
+            {cases.length
+              ? `${cases.length} case${cases.length === 1 ? "" : "s"} in this plan. Click a row to edit.`
+              : "Create starter cases, or open an operation on the left and save one by hand."}
+          </p>
         </div>
         <div className="actions">
-          <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input type="checkbox" checked={includeNegativePlan} onChange={(event) => setIncludeNegativePlan(event.target.checked)} />
-            Also Negative
-          </label>
-          <button type="button" className="btn primary" onClick={generatePlans}>Generate Smoke plan</button>
-          <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input type="checkbox" checked={includePositive} onChange={(event) => setIncludePositive(event.target.checked)} />
-            Positive
-          </label>
-          <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input type="checkbox" checked={includeNegative} onChange={(event) => setIncludeNegative(event.target.checked)} />
-            Negative
-          </label>
-          <button type="button" className="btn" onClick={generate}>Fill this plan</button>
-          <button type="button" className="btn" onClick={runPlan} disabled={!!running || !cases.length}>
-            {running === "plan" ? "Running…" : "Run plan"}
-          </button>
+          {cases.length ? (
+            <>
+              <button type="button" className="btn" onClick={exportPlan}>Download Excel</button>
+              <button type="button" className="btn primary" onClick={runPlan} disabled={!!running}>
+                {running === "plan" ? "Running…" : "Run plan"}
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
       <AuthSettings auth={auth} onChange={setAuth} />
+      {authCue ? (
+        <div className="status-banner down" style={{ marginTop: 16 }}>
+          API returned 401. Add run authentication if this endpoint needs login.
+        </div>
+      ) : null}
       {planSummary ? (
         <div className={`card run-result ${planSummary.allPassed ? "pass" : "fail"}`} style={{ marginTop: 16 }}>
           <div className="array-toolbar" style={{ marginBottom: 0 }}>
@@ -153,29 +234,103 @@ export default function CasesPage() {
       ) : null}
       <RunResultPanel result={selectedResult} />
       {!cases.length ? (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="empty">No saved cases in this plan yet. Generate a Smoke plan from all operations, or save a case from an operation page.</div>
+        <div className="card start-card" style={{ marginTop: 16 }}>
+          <h3>Get started</h3>
+          <p className="empty" style={{ paddingTop: 0 }}>
+            Create one happy-path case per operation. Existing case names are skipped.
+          </p>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={includeNegativePlan}
+              onChange={(event) => setIncludeNegativePlan(event.target.checked)}
+            />
+            Also create a Negative plan
+          </label>
+          <div className="actions" style={{ marginTop: 14 }}>
+            <button type="button" className="btn primary" onClick={generatePlans}>
+              Create starter cases
+            </button>
+          </div>
         </div>
       ) : (
         <div className="card" style={{ marginTop: 16 }}>
+          <div className="fill-bar">
+            <span className="hint">Generate more cases for every operation (duplicates skipped)</span>
+            <label className="check">
+              <input type="checkbox" checked={includePositive} onChange={(event) => setIncludePositive(event.target.checked)} />
+              Positive
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={includeNegative} onChange={(event) => setIncludeNegative(event.target.checked)} />
+              Negative
+            </label>
+            <button type="button" className="btn" onClick={generate}>Generate</button>
+          </div>
+          <div className="fill-bar">
+            <input
+              type="search"
+              className="inline-search"
+              placeholder="Filter by name or path"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+            <select value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)}>
+              <option value="">All methods</option>
+              {methods.map((method) => <option key={method} value={method}>{method}</option>)}
+            </select>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="">All statuses</option>
+              {statuses.map((code) => <option key={code} value={code}>{code}</option>)}
+            </select>
+            {selectedIds.length ? (
+              <>
+                <span className="hint">{selectedIds.length} selected</span>
+                <button type="button" className="btn" onClick={() => bulkEnabled("N")}>Disable</button>
+                <button type="button" className="btn" onClick={() => bulkEnabled("Y")}>Enable</button>
+                <button type="button" className="btn danger" onClick={bulkDelete}>Delete</button>
+              </>
+            ) : null}
+          </div>
           <table className="table">
             <thead>
               <tr>
-                {["Name", "Method", "Endpoint", "Group", "Status", "Result", ""].map((text) => <th key={text}>{text}</th>)}
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={visible.length > 0 && visible.every((item) => selected[item.id])}
+                    onChange={(event) => {
+                      const next = { ...selected };
+                      visible.forEach((item) => {
+                        next[item.id] = event.target.checked;
+                      });
+                      setSelected(next);
+                    }}
+                  />
+                </th>
+                {["Name", "Method", "Endpoint", "Group", "Status", "On", "Result", ""].map((text) => <th key={text}>{text}</th>)}
               </tr>
             </thead>
             <tbody>
-              {cases.map((item) => (
+              {visible.map((item) => (
                 <tr
                   key={item.id}
                   style={{ cursor: "pointer" }}
                   onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(item.operationKey)}/case/${item.id}`)}
                 >
+                  <td onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={!!selected[item.id]}
+                      onChange={(event) => setSelected((current) => ({ ...current, [item.id]: event.target.checked }))}
+                    />
+                  </td>
                   <td>{item.testName}</td>
                   <td>{item.method}</td>
                   <td>{item.endpoint}</td>
                   <td>{item.testGroup}</td>
                   <td>{item.statusCode}</td>
+                  <td>{item.enabled === "N" ? "No" : "Yes"}</td>
                   <td onClick={(event) => {
                     event.stopPropagation();
                     if (runById[item.id]) setSelectedResult(runById[item.id]);
@@ -196,10 +351,34 @@ export default function CasesPage() {
               ))}
             </tbody>
           </table>
+          {!visible.length ? <div className="empty">No cases match this filter.</div> : null}
         </div>
       )}
     </div>
   );
+}
+
+function caseUpdate(item, patch) {
+  return {
+    specId: item.specId,
+    planId: item.planId,
+    operationKey: item.operationKey,
+    testName: item.testName,
+    pathParams: item.pathParams,
+    queryParams: item.queryParams,
+    headers: item.headers,
+    requestBody: item.requestBody,
+    statusCode: item.statusCode,
+    responseType: item.responseType,
+    expectedResponse: item.expectedResponse,
+    enabled: item.enabled,
+    testGroup: item.testGroup,
+    jsonPathAssertions: item.jsonPathAssertions,
+    maxResponseTimeMs: item.maxResponseTimeMs,
+    contentType: item.contentType,
+    baseUrl: item.baseUrl,
+    ...patch
+  };
 }
 
 export function generateToast(result) {
@@ -234,4 +413,3 @@ export function generatePlansToast(result) {
   }
   return message;
 }
-

@@ -5,18 +5,9 @@ import { useToast } from "../components/Toast";
 
 export default function ExportPage() {
   const { specId } = useParams();
-  const { spec, config, plans, plan, planId, selectPlan } = useOutletContext();
+  const { spec, plans, plan, planId, selectPlan } = useOutletContext();
   const { toast } = useToast();
   const [excelFileName, setExcelFileName] = useState("");
-  const [storageType, setStorageType] = useState(config?.storageType || "");
-
-  useEffect(() => {
-    Api.config()
-      .then((next) => {
-        setStorageType(next.storageType || "");
-      })
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (plan?.name) {
@@ -37,15 +28,15 @@ export default function ExportPage() {
     <div>
       <div className="topbar">
         <div>
-          <div className="crumb">{spec.title}{storageType ? ` · storage=${storageType}` : ""}</div>
-          <h2>Export</h2>
+          <div className="crumb">{spec.name || spec.title}{plan?.name ? ` · ${plan.name}` : ""}</div>
+          <h2>Export Excel</h2>
         </div>
         <button type="button" className="btn primary" onClick={exportCases}>Download Excel</button>
       </div>
       <div className="card">
         <h3>Download</h3>
         <p className="hint">
-          Downloads api-automation Excel for the selected test plan only. Request bodies are inlined in RequestBody.
+          Downloads api-automation Excel for the selected plan only. Request bodies are written into the RequestBody column.
         </p>
         <div className="field">
           <label>Test plan</label>

@@ -145,9 +145,19 @@ export const Api = {
     return request("/api/specs", { method: "POST", body: JSON.stringify(payload) });
   },
 
-  uploadSpec(file, baseUrl) {
+  renameSpec(specId, payload) {
+    return request(`/api/specs/${encodeURIComponent(specId)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  uploadSpec(file, baseUrl, name) {
     const data = new FormData();
     data.append("file", file);
+    if (name) {
+      data.append("name", name);
+    }
     if (baseUrl) {
       data.append("baseUrl", baseUrl);
     }
@@ -168,6 +178,10 @@ export const Api = {
       data.append("baseUrl", baseUrl);
     }
     return request(`/api/specs/${encodeURIComponent(specId)}/reload/upload`, { method: "POST", body: data });
+  },
+
+  deleteSpec(specId) {
+    return request(`/api/specs/${encodeURIComponent(specId)}`, { method: "DELETE" });
   },
 
   getSpec(specId) {

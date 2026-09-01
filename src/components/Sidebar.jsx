@@ -1,31 +1,72 @@
-import { useRef, useState } from "react";
-import { NavLink, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { NavLink, useLocation, useParams } from "react-router-dom";
 import { Api } from "../api";
 import { useToast } from "./Toast";
-import { generatePlansToast } from "../pages/CasesPage";
 
 export default function Sidebar({
   spec,
   operations,
+  caseCounts = {},
   search,
   onSearch,
-  config,
   plans,
   planId,
   onSelectPlan,
   onPlansChange,
-  onReloadSpec
+  onReloadSpec,
+  onSpecRenamed
 }) {
   const { specId } = useParams();
-  const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const fileRef = useRef(null);
+  const navRef = useRef(null);
   const [newPlanName, setNewPlanName] = useState("");
-  const [includeNegativePlan, setIncludeNegativePlan] = useState(true);
   const [reloading, setReloading] = useState(false);
-  const grouped = groupOperations(
-    operations.filter((operation) => matchesSearch(operation, search))
+  const [showTags, setShowTags] = useState(readShowTags);
+  const [collapsedTags, setCollapsedTags] = useState(() => new Set());
+  const needsRename = spec.name && spec.title && spec.name === spec.title;
+  const [renaming, setRenaming] = useState(needsRename);
+  const [renameFocus, setRenameFocus] = useState(false);
+  const [specName, setSpecName] = useState(spec.name || "");
+
+  const visibleOps = useMemo(
+    () => operations.filter((operation) => matchesSearch(operation, search)),
+    [operations, search]
   );
+  const grouped = useMemo(() => groupOperations(visibleOps), [visibleOps]);
+  const tagNames = Object.keys(grouped);
+
+  useEffect(() => {
+    setSpecName(spec.name || "");
+    setRenaming(Boolean(spec.name && spec.title && spec.name === spec.title));
+    setRenameFocus(false);
+  }, [spec.specId, spec.name, spec.title]);
+
+  useEffect(() => {
+    setCollapsedTags(new Set());
+  }, [specId]);
+
+  useEffect(() => {
+    const active = navRef.current?.querySelector(".op-item.active");
+    active?.scrollIntoView({ block: "nearest" });
+  }, [location.pathname, visibleOps, showTags, collapsedTags]);
+
+  async function saveSpecName() {
+    const nextName = specName.trim();
+    if (!nextName) {
+      toast("Spec name is required", true);
+      return;
+    }
+    try {
+      const updated = await Api.renameSpec(specId, { name: nextName });
+      onSpecRenamed?.(updated);
+      setRenaming(false);
+      toast("Name saved");
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
 
   async function addPlan() {
     const name = newPlanName.trim();
@@ -61,20 +102,6 @@ export default function Sidebar({
     }
   }
 
-  async function generatePlans() {
-    try {
-      const result = await Api.generatePlans({
-        specId,
-        includeNegative: includeNegativePlan
-      });
-      await onPlansChange(result.smokePlan.id);
-      toast(generatePlansToast(result));
-      navigate(`/s/${specId}/cases`);
-    } catch (error) {
-      toast(error.message, true);
-    }
-  }
-
   async function reloadSpec(file) {
     if (!window.confirm(RELOAD_SPEC_CONFIRM)) {
       return;
@@ -97,22 +124,94 @@ export default function Sidebar({
     fileRef.current?.click();
   }
 
+  function toggleShowTags() {
+    setShowTags((current) => {
+      const next = !current;
+      writeShowTags(next);
+      return next;
+    });
+  }
+
+  function toggleTag(tag) {
+    setCollapsedTags((current) => {
+      const next = new Set(current);
+      if (next.has(tag)) {
+        next.delete(tag);
+      } else {
+        next.add(tag);
+      }
+      return next;
+    });
+  }
+
+  const filteredCount = visibleOps.length;
+  const totalCases = Object.values(caseCounts).reduce((sum, count) => sum + count, 0);
+
+  function renderOperation(operation) {
+    return (
+      <NavLink
+        key={operation.key}
+        to={`/s/${specId}/op/${encodeURIComponent(operation.key)}`}
+        title={`${operation.method} ${operation.path}`}
+        className={({ isActive }) => `op-item ${isActive ? "active" : ""}`}
+      >
+        <span className={`method ${operation.method}`}>{operation.method}</span>
+        <span className="op-copy">
+          <div className="name">{operation.summary || operation.key}</div>
+          <div className="path">{operation.path}</div>
+        </span>
+        {caseCounts[operation.key] ? (
+          <span className="case-count">{caseCounts[operation.key]}</span>
+        ) : null}
+      </NavLink>
+    );
+  }
+
   return (
     <aside className="sidebar">
-      <div className="brand">
+      <NavLink to="/" className="brand">
         <h1>Test Data Studio</h1>
         <p>Schema-driven test cases</p>
-      </div>
+      </NavLink>
       <div className="spec-meta">
-        <div className="title">{spec.title}</div>
-        <div className="sub">
-          {spec.operationCount} operations · {spec.baseUrl}
-        </div>
-        {config?.storageType ? (
-          <div className="sub">API storage: {config.storageType}</div>
+        {renaming ? (
+          <div className="plan-add">
+            <input
+              value={specName}
+              autoFocus={renameFocus}
+              placeholder="Unique spec name"
+              onChange={(event) => setSpecName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") saveSpecName();
+                if (event.key === "Escape") setRenaming(false);
+              }}
+            />
+            <button type="button" className="btn ghost" onClick={saveSpecName}>Save</button>
+          </div>
+        ) : (
+          <div className="spec-title-row">
+            <div className="title">{spec.name || spec.title}</div>
+            <button
+              type="button"
+              className="linkish"
+              onClick={() => {
+                setRenameFocus(true);
+                setRenaming(true);
+              }}
+            >
+              Rename
+            </button>
+          </div>
+        )}
+        {needsRename && renaming ? (
+          <div className="sub">Give this spec a unique name so you can tell it apart from the OpenAPI title.</div>
         ) : null}
+        {spec.title && spec.title !== spec.name ? <div className="sub">{spec.title}</div> : null}
+        <div className="sub">
+          {spec.operationCount} operations{spec.baseUrl ? ` · ${spec.baseUrl}` : ""}
+        </div>
         <button type="button" className="btn ghost" style={{ marginTop: 10 }} onClick={chooseReloadSource} disabled={reloading}>
-          {reloading ? "Reloading…" : "Reload spec"}
+          {reloading ? "Updating…" : "Update spec"}
         </button>
         <input
           ref={fileRef}
@@ -133,82 +232,126 @@ export default function Sidebar({
             <option key={plan.id} value={plan.id}>{plan.name}</option>
           ))}
         </select>
-        <div className="plan-add">
-          <input
-            value={newPlanName}
-            placeholder="New plan name"
-            onChange={(event) => setNewPlanName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") addPlan();
-            }}
-          />
-          <button type="button" className="btn ghost" onClick={addPlan}>Add</button>
-        </div>
-        <button type="button" className="btn ghost" onClick={removePlan} disabled={plans.length <= 1}>
-          Delete plan
-        </button>
-        <div className="plan-generate">
-          <button type="button" className="btn primary" onClick={generatePlans}>
-            Generate Smoke plan
-          </button>
-          <label className="plan-check">
+        <details className="plan-manage">
+          <summary>Manage plan</summary>
+          <div className="plan-add">
             <input
-              type="checkbox"
-              checked={includeNegativePlan}
-              onChange={(event) => setIncludeNegativePlan(event.target.checked)}
+              value={newPlanName}
+              placeholder="New plan name"
+              onChange={(event) => setNewPlanName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") addPlan();
+              }}
             />
-            Also Negative plan
-          </label>
+            <button type="button" className="btn ghost" onClick={addPlan}>Add</button>
+          </div>
+          <button type="button" className="btn ghost" onClick={removePlan} disabled={plans.length <= 1}>
+            Delete plan
+          </button>
+        </details>
+      </div>
+      <div className="nav-chrome">
+        <div className="side-search">
+          <input
+            type="search"
+            placeholder="Search operations"
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+          />
+          <div className="nav-toolbar">
+            <label className="nav-tags-toggle">
+              <input type="checkbox" checked={showTags} onChange={toggleShowTags} />
+              Show tags
+            </label>
+            {showTags && tagNames.length > 1 ? (
+              <span className="nav-tag-actions">
+                <button type="button" className="linkish" onClick={() => setCollapsedTags(new Set())}>Expand</button>
+                <button type="button" className="linkish" onClick={() => setCollapsedTags(new Set(tagNames))}>Collapse</button>
+              </span>
+            ) : null}
+          </div>
         </div>
-      </div>
-      <div className="side-search">
-        <input
-          type="search"
-          placeholder="Filter operations"
-          value={search}
-          onChange={(event) => onSearch(event.target.value)}
-        />
-      </div>
-      <nav className="nav">
         <NavLink to={`/s/${specId}/cases`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-          Saved test cases
+          Cases
+          {totalCases ? <span className="case-count">{totalCases}</span> : null}
         </NavLink>
         <NavLink to={`/s/${specId}/export`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
           Export Excel
         </NavLink>
-        {Object.entries(grouped).map(([tag, ops]) => (
-          <div key={tag}>
-            <div className="tag-label">{tag}</div>
-            {ops.map((operation) => (
-              <NavLink
-                key={operation.key}
-                to={`/s/${specId}/op/${encodeURIComponent(operation.key)}`}
-                className={({ isActive }) => `op-item ${isActive ? "active" : ""}`}
-              >
-                <span className={`method ${operation.method}`}>{operation.method}</span>
-                <span className="op-copy">
-                  <div className="name">{operation.summary || operation.key}</div>
-                  <div className="path">{operation.path}</div>
-                </span>
-              </NavLink>
-            ))}
-          </div>
-        ))}
+      </div>
+      <nav className="nav" ref={navRef}>
+        {search && !filteredCount ? (
+          <div className="empty" style={{ padding: "12px 10px", color: "#b0b0b0" }}>No operations match.</div>
+        ) : null}
+        {showTags
+          ? tagNames.map((tag) => {
+              const ops = grouped[tag] || [];
+              const open = Boolean(search) || !collapsedTags.has(tag);
+              return (
+                <div key={tag} className="tag-group">
+                  <button
+                    type="button"
+                    className="tag-label"
+                    aria-expanded={open}
+                    onClick={() => toggleTag(tag)}
+                  >
+                    <span className="tag-caret">{open ? "▾" : "▸"}</span>
+                    {displayTag(tag)}
+                    <span className="tag-count">{ops.length}</span>
+                  </button>
+                  {open ? ops.map(renderOperation) : null}
+                </div>
+              );
+            })
+          : visibleOps.map(renderOperation)}
       </nav>
-      <div style={{ padding: 16 }}>
-        <NavLink to="/" className="btn ghost">Load another spec</NavLink>
+      <div className="side-foot">
+        <NavLink to="/" className="btn ghost">All specs</NavLink>
       </div>
     </aside>
   );
 }
 
+const SHOW_TAGS_KEY = "testdata.nav.showTags";
+
+function readShowTags() {
+  try {
+    const raw = localStorage.getItem(SHOW_TAGS_KEY);
+    if (raw == null) return true;
+    return raw === "true";
+  } catch {
+    return true;
+  }
+}
+
+function writeShowTags(value) {
+  try {
+    localStorage.setItem(SHOW_TAGS_KEY, String(value));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function opTag(operation) {
+  return operation.tag || "generated";
+}
+
 function groupOperations(operations) {
   return operations.reduce((groups, operation) => {
-    const tag = operation.tag || "generated";
+    const tag = opTag(operation);
     groups[tag] = groups[tag] || [];
     groups[tag].push(operation);
     return groups;
   }, {});
+}
+
+function displayTag(tag) {
+  const trimmed = String(tag || "")
+    .replace(/[-_]?controller$/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim();
+  if (!trimmed) return tag;
+  return trimmed.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function matchesSearch(operation, search) {
@@ -221,7 +364,7 @@ export function reloadSpecToast(result) {
   const added = result?.addedOperations?.length ?? 0;
   const removed = result?.removedOperations?.length ?? 0;
   const orphaned = result?.orphanedCaseCount ?? 0;
-  let message = `Spec reloaded (${result?.spec?.operationCount ?? 0} operations)`;
+  let message = `Spec updated (${result?.spec?.operationCount ?? 0} operations)`;
   if (added) {
     message += `. +${added} new`;
   }
@@ -235,5 +378,4 @@ export function reloadSpecToast(result) {
 }
 
 export const RELOAD_SPEC_CONFIRM =
-  "Reload the OpenAPI document in place?\n\nPlans and saved cases are kept. Operation forms pick up the new schema. Cases for operations that disappear stay in the plan but cannot be opened until you delete them or restore that operation.";
-
+  "Update this spec in place?\n\nPlans and saved cases are kept. Operation forms pick up the new schema. Cases for operations that disappear stay in the plan but cannot be opened until you delete them or restore that operation.";
