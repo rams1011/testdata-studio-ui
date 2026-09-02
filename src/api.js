@@ -154,11 +154,14 @@ export const Api = {
     });
   },
 
-  uploadSpec(file, baseUrl, name) {
+  uploadSpec(file, baseUrl, name, label) {
     const data = new FormData();
     data.append("file", file);
     if (name) {
       data.append("name", name);
+    }
+    if (label != null) {
+      data.append("label", label);
     }
     if (baseUrl) {
       data.append("baseUrl", baseUrl);

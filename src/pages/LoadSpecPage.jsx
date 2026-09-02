@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_DISPLAY, Api } from "../api";
 import { useToast } from "../components/Toast";
+import LabelField, { specLabel, uniqueLabels } from "../components/LabelField";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
 
 export default function LoadSpecPage() {
@@ -9,6 +10,7 @@ export default function LoadSpecPage() {
   const { toast } = useToast();
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
+  const [label, setLabel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [paste, setPaste] = useState("");
   const [source, setSource] = useState("file");
@@ -39,7 +41,7 @@ export default function LoadSpecPage() {
 
   const specs = (backend.specs || []).filter((spec) => {
     if (!query.trim()) return true;
-    const haystack = `${spec.name || ""} ${spec.title || ""} ${spec.baseUrl || ""}`.toLowerCase();
+    const haystack = `${spec.name || ""} ${spec.title || ""} ${spec.label || ""} ${spec.baseUrl || ""}`.toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
   });
 
@@ -74,6 +76,7 @@ export default function LoadSpecPage() {
     try {
       const spec = await Api.loadSpec({
         name: specName,
+        label: label.trim(),
         location: source === "url" ? (url.trim() || null) : null,
         content: source === "paste" ? (paste.trim() || null) : null,
         baseUrl: baseUrl.trim() || null
@@ -91,7 +94,7 @@ export default function LoadSpecPage() {
     if (!specName) return;
     setLoading(true);
     try {
-      const spec = await Api.uploadSpec(file, baseUrl.trim(), specName);
+      const spec = await Api.uploadSpec(file, baseUrl.trim(), specName, label.trim());
       navigate(`/s/${spec.specId}`);
     } catch (error) {
       toast(error.message, true);
@@ -180,7 +183,7 @@ export default function LoadSpecPage() {
             <input
               type="search"
               className="inline-search"
-              placeholder="Search by name or URL"
+              placeholder="Search by name, label, or URL"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -196,39 +199,49 @@ export default function LoadSpecPage() {
           <div className="empty">No specs match “{query}”.</div>
         ) : (
           <div className="spec-list">
-            {specs.map((spec) => (
-              <div key={spec.specId} className="spec-row">
-                <button
-                  type="button"
-                  className="spec-open"
-                  onClick={() => navigate(`/s/${spec.specId}`)}
-                >
-                  <div className="spec-open-title">{spec.name || spec.title}</div>
-                  {spec.title && spec.title !== spec.name ? (
-                    <div className="hint">{spec.title}</div>
-                  ) : null}
-                  <div className="hint">
-                    {spec.operationCount} operations
-                    {spec.baseUrl ? ` · ${spec.baseUrl}` : ""}
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={!!reloadingId || !!deletingId}
-                  onClick={(event) => startReload(spec, event)}
-                >
-                  {reloadingId === spec.specId ? "Updating…" : "Update spec"}
-                </button>
-                <button
-                  type="button"
-                  className="btn danger"
-                  disabled={!!reloadingId || !!deletingId}
-                  onClick={(event) => deleteSpec(spec, event)}
-                >
-                  {deletingId === spec.specId ? "Deleting…" : "Delete"}
-                </button>
-              </div>
+            {groupSpecs(specs).map(([group, items]) => (
+              <details key={group} className="spec-group" open>
+                <summary>
+                  <span className="spec-group-title">{group}</span>
+                  <span className="hint">{items.length} spec{items.length === 1 ? "" : "s"}</span>
+                </summary>
+                <div className="spec-group-body">
+                  {items.map((spec) => (
+                    <div key={spec.specId} className="spec-row">
+                      <button
+                        type="button"
+                        className="spec-open"
+                        onClick={() => navigate(`/s/${spec.specId}`)}
+                      >
+                        <div className="spec-open-title">{spec.name || spec.title}</div>
+                        {spec.title && spec.title !== spec.name ? (
+                          <div className="hint">{spec.title}</div>
+                        ) : null}
+                        <div className="hint">
+                          {spec.operationCount} operations
+                          {spec.baseUrl ? ` · ${spec.baseUrl}` : ""}
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={!!reloadingId || !!deletingId}
+                        onClick={(event) => startReload(spec, event)}
+                      >
+                        {reloadingId === spec.specId ? "Updating…" : "Update spec"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn danger"
+                        disabled={!!reloadingId || !!deletingId}
+                        onClick={(event) => deleteSpec(spec, event)}
+                      >
+                        {deletingId === spec.specId ? "Deleting…" : "Delete"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </details>
             ))}
           </div>
         )}
@@ -262,8 +275,14 @@ export default function LoadSpecPage() {
             onChange={(event) => setName(event.target.value)}
             placeholder="e.g. HRM local"
           />
-          <div className="hint">Must be unique. This is your label — not the OpenAPI title.</div>
+          <div className="hint">Must be unique. This is your name for the spec — not the OpenAPI title.</div>
         </div>
+        <LabelField
+          id="new-spec-label"
+          value={label}
+          onChange={setLabel}
+          suggestions={uniqueLabels(backend.specs)}
+        />
         <div className="field">
           <label>API base URL</label>
           <input
@@ -341,6 +360,21 @@ export default function LoadSpecPage() {
       </div>
     </div>
   );
+}
+
+function groupSpecs(specs) {
+  const groups = new Map();
+  (specs || []).forEach((spec) => {
+    const label = specLabel(spec);
+    const key = label.toLowerCase();
+    if (!groups.has(key)) {
+      groups.set(key, { title: label, items: [] });
+    }
+    groups.get(key).items.push(spec);
+  });
+  return [...groups.values()]
+    .sort((left, right) => left.title.localeCompare(right.title, undefined, { sensitivity: "base" }))
+    .map((group) => [group.title, group.items]);
 }
 
 function nameFromFile(file) {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
 import Sidebar, { reloadSpecToast } from "../components/Sidebar";
+import WorkspaceBar from "../components/WorkspaceBar";
 import { useToast } from "../components/Toast";
 
 function planStorageKey(specId) {
@@ -138,17 +139,10 @@ export default function StudioLayout() {
     <div className="shell">
       {ready ? (
         <Sidebar
-          spec={spec}
           operations={operations}
           caseCounts={caseCounts}
           search={search}
           onSearch={setSearch}
-          plans={plans}
-          planId={planId}
-          onSelectPlan={selectPlan}
-          onPlansChange={reloadPlans}
-          onReloadSpec={reloadSpec}
-          onSpecRenamed={setSpec}
         />
       ) : (
         <aside className="sidebar">
@@ -158,24 +152,37 @@ export default function StudioLayout() {
           </div>
         </aside>
       )}
-      <main className="main">
+      <div className="workspace">
         {ready ? (
-          <Outlet context={{
-            spec,
-            operations,
-            config,
-            plans,
-            plan,
-            planId,
-            selectPlan,
-            reloadPlans,
-            reloadCases,
-            caseCounts
-          }} />
-        ) : (
-          <div className="empty">Loading spec…</div>
-        )}
-      </main>
+          <WorkspaceBar
+            spec={spec}
+            plans={plans}
+            planId={planId}
+            onSelectPlan={selectPlan}
+            onPlansChange={reloadPlans}
+            onReloadSpec={reloadSpec}
+            onSpecRenamed={setSpec}
+          />
+        ) : null}
+        <main className="main">
+          {ready ? (
+            <Outlet context={{
+              spec,
+              operations,
+              config,
+              plans,
+              plan,
+              planId,
+              selectPlan,
+              reloadPlans,
+              reloadCases,
+              caseCounts
+            }} />
+          ) : (
+            <div className="empty">Loading spec…</div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

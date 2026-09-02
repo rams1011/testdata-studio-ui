@@ -7,7 +7,7 @@ import { useToast } from "../components/Toast";
 
 export default function CasesPage() {
   const { specId } = useParams();
-  const { spec, plan, planId, reloadPlans, reloadCases } = useOutletContext();
+  const { plan, planId, reloadPlans, reloadCases } = useOutletContext();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [cases, setCases] = useState([]);
@@ -196,7 +196,6 @@ export default function CasesPage() {
     <div>
       <div className="topbar">
         <div>
-          <div className="crumb">{spec.name || spec.title}{plan?.name ? ` · ${plan.name}` : ""}</div>
           <h2>Cases</h2>
           <p className="hint" style={{ marginTop: 6 }}>
             {cases.length
