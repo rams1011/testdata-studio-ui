@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
-import SchemaForm from "../components/SchemaForm";
+import RequestBodyEditor from "../components/RequestBodyEditor";
 import JsonPathAssertionsPicker from "../components/JsonPathAssertionsPicker";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
 import AuthSettings, { useSpecAuth } from "../components/AuthSettings";
@@ -49,8 +49,7 @@ export default function OperationPage() {
       setCases(nextCases);
       const nextForm = existing ? formFromCase(existing) : formFromOperation(nextOperation, spec);
       const nextBody = existing?.requestBody
-        ?? nextOperation.requestBody?.sample
-        ?? sampleFromSchema(nextOperation.requestBody?.jsonSchema);
+        ?? sampleFromSchema(nextOperation.requestBody?.jsonSchema, "", { emptyArrays: true });
       setForm(nextForm);
       setRequestBody(nextBody);
       setRunResult(null);
@@ -279,8 +278,9 @@ export default function OperationPage() {
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Request body</h3>
             {operation.requestBody ? (
-              <SchemaForm
+              <RequestBodyEditor
                 key={`${operationKey}-${caseId || "new"}`}
+                resetKey={`${operationKey}-${caseId || "new"}`}
                 schema={operation.requestBody.jsonSchema}
                 value={requestBody}
                 onChange={setRequestBody}
@@ -290,8 +290,11 @@ export default function OperationPage() {
             )}
           </div>
 
-          <Collapsible title="Expected response" hint="Optional">
+          <div className="card" style={{ marginTop: 16 }}>
+            <h3>Expected response</h3>
             <ExpectedResponseEditor
+              key={`${operationKey}-${caseId || "new"}-expected`}
+              resetKey={`${operationKey}-${caseId || "new"}`}
               schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
               sample={hasResponseBodySchema(operation.response) ? operation.response.sample : null}
               value={form.expectedResponse}
@@ -301,7 +304,7 @@ export default function OperationPage() {
                 responseType: current.responseType === "NONE" ? "JSON" : current.responseType
               }))}
             />
-          </Collapsible>
+          </div>
 
           <Collapsible title="JSONPath assertions" hint="Off until you pick paths">
             <JsonPathAssertionsPicker
@@ -315,11 +318,6 @@ export default function OperationPage() {
 
         <div>
           <RunResultPanel result={runResult} />
-          <Collapsible title="JSON preview" hint="Request body">
-            <pre className="json-preview">
-              {operation.requestBody ? JSON.stringify(requestBody, null, 2) : "No request body"}
-            </pre>
-          </Collapsible>
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Saved for this operation</h3>
             {!cases.length ? (

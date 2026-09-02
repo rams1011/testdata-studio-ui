@@ -56,28 +56,49 @@ export function schemaType(schema) {
   return "string";
 }
 
-export function sampleFromSchema(schema, name = "") {
+export function sampleFromSchema(schema, name = "", options = {}) {
   const type = schemaType(schema);
   if (!schema) return {};
-  if (schema.default !== undefined) return cloneSample(schema.default);
-  if (schema.example !== undefined) return cloneSample(schema.example);
+  if (schema.default !== undefined) {
+    return options.emptyArrays ? emptyNestedArrays(cloneSample(schema.default)) : cloneSample(schema.default);
+  }
+  if (schema.example !== undefined) {
+    return options.emptyArrays ? emptyNestedArrays(cloneSample(schema.example)) : cloneSample(schema.example);
+  }
   if (schema.enum && schema.enum.length) return schema.enum[0];
   if (type === "object") {
     const value = {};
     Object.entries(schema.properties || {}).forEach(([propertyName, property]) => {
-      value[propertyName] = sampleFromSchema(property, propertyName);
+      value[propertyName] = sampleFromSchema(property, propertyName, options);
     });
     return value;
   }
   if (type === "array") {
-    return schema.items ? [sampleFromSchema(schema.items, name)] : [];
+    if (options.emptyArrays) {
+      return [];
+    }
+    return schema.items ? [sampleFromSchema(schema.items, name, options)] : [];
   }
   if (type === "boolean") return true;
   if (type === "integer" || type === "number") return 0;
   if (type === "json") {
-    return schema.properties ? sampleFromSchema({ ...schema, type: "object" }, name) : "sample";
+    return schema.properties ? sampleFromSchema({ ...schema, type: "object" }, name, options) : "sample";
   }
   return sampleString(schema, name);
+}
+
+function emptyNestedArrays(value) {
+  if (Array.isArray(value)) {
+    return [];
+  }
+  if (value != null && typeof value === "object") {
+    const next = {};
+    Object.entries(value).forEach(([key, child]) => {
+      next[key] = emptyNestedArrays(child);
+    });
+    return next;
+  }
+  return value;
 }
 
 function cloneSample(value) {

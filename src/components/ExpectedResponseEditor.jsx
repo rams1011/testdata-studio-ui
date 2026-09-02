@@ -1,80 +1,65 @@
-import { useMemo, useState } from "react";
-import SchemaForm from "./SchemaForm";
+import SchemaBodyEditor from "./SchemaBodyEditor";
 import { hasResponseSchema, sampleFromSchema } from "../schema";
 
-export default function ExpectedResponseEditor({ schema, sample, value, onChange, onBuilt }) {
-  const [showForm, setShowForm] = useState(isJsonValue(value));
-  const parsed = useMemo(() => parseExpected(value), [value]);
+export default function ExpectedResponseEditor({ schema, sample, value, onChange, onBuilt, resetKey }) {
   const canBuild = hasResponseSchema(schema);
+  const parsed = parseExpected(value);
 
-  function buildFromSchema() {
-    const fromSchema = sampleFromSchema(schema);
-    const built = fillStringSamples(sample != null ? structuredClone(sample) : fromSchema, fromSchema);
-    onChange(stringify(built));
-    setShowForm(true);
+  function persist(next) {
+    if (next == null) {
+      onChange("");
+      return;
+    }
+    onChange(stringify(next));
     if (onBuilt) {
-      onBuilt(built);
+      onBuilt(next);
     }
   }
 
-  function applyForm(next) {
-    onChange(stringify(next));
+  function fillSample() {
+    const fromSchema = sampleFromSchema(schema);
+    persist(fillStringSamples(sample != null ? structuredClone(sample) : fromSchema, fromSchema));
   }
 
-  function clear() {
-    onChange("");
-    setShowForm(false);
-  }
-
-  return (
-    <div className="field expected-response">
-      <label>
-        Expected response
-        <span className="hint">{canBuild ? "Optional JSON body to compare. Leave blank if you only check status." : "No response schema"}</span>
-      </label>
-      <div className="jsonpath-toolbar">
-        <button type="button" className="btn primary" onClick={buildFromSchema} disabled={!canBuild}>
-          Build from schema
-        </button>
-        {canBuild ? (
-          <button type="button" className="btn" onClick={() => {
-            if (!showForm && !isJsonValue(value)) {
-              buildFromSchema();
-              return;
-            }
-            setShowForm((open) => !open);
-          }}>
-            {showForm ? "Hide schema form" : "Edit with schema form"}
-          </button>
-        ) : null}
-        <button type="button" className="btn" onClick={clear}>Clear</button>
-      </div>
-      {!canBuild ? (
-        <div className="empty">No response</div>
-      ) : null}
-      {showForm && canBuild ? (
-        <div className="card" style={{ boxShadow: "none", marginBottom: 10, padding: 12 }}>
-          <SchemaForm
-            schema={schema || { type: "object" }}
-            value={parsed == null ? sampleFromSchema(schema) : parsed}
-            onChange={applyForm}
-          />
-        </div>
-      ) : null}
-      {canBuild || isJsonValue(value) ? (
+  if (!canBuild) {
+    return (
+      <div className="field expected-response">
+        <div className="empty">This operation has no response body schema.</div>
         <textarea
+          className="body-json"
           value={blankNa(value)}
           onChange={(event) => onChange(event.target.value)}
           placeholder="Leave blank if none"
-          style={{ minHeight: 140 }}
+          spellCheck={false}
+          aria-label="Expected response JSON"
         />
-      ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="expected-response">
+      <p className="hint" style={{ margin: "0 0 12px" }}>
+        Optional JSON body to compare. Leave blank if you only check status.
+      </p>
+      <SchemaBodyEditor
+        schema={schema || { type: "object" }}
+        value={parsed}
+        onChange={persist}
+        resetKey={resetKey}
+        searchAria="Search expected response fields"
+        jsonAria="Expected response JSON"
+        tabsAria="Expected response editor"
+        emptyToNull
+        onFillSample={fillSample}
+        extraActions={(
+          <button type="button" className="btn" onClick={() => persist(null)}>
+            Clear
+          </button>
+        )}
+      />
     </div>
   );
-}
-
-function isJsonValue(value) {
-  return parseExpected(value) != null;
 }
 
 function blankNa(value) {
@@ -120,8 +105,8 @@ function fillStringSamples(target, fallback) {
   }
   const source = target && typeof target === "object" && !Array.isArray(target) ? target : {};
   const result = { ...source };
-  Object.entries(fallback).forEach(([key, value]) => {
-    result[key] = fillStringSamples(source[key], value);
+  Object.entries(fallback).forEach(([key, child]) => {
+    result[key] = fillStringSamples(source[key], child);
   });
   return result;
 }
