@@ -22,7 +22,6 @@ export default function StudioLayout() {
   const [operations, setOperations] = useState([]);
   const [plans, setPlans] = useState([]);
   const [planId, setPlanId] = useState(() => sessionStorage.getItem(planStorageKey(specId)) || "");
-  const [config, setConfig] = useState(null);
   const [search, setSearch] = useState("");
   const [error, setError] = useState(null);
   const [cases, setCases] = useState([]);
@@ -34,15 +33,13 @@ export default function StudioLayout() {
     Promise.all([
       Api.getSpec(specId),
       Api.listOperations(specId),
-      Api.listPlans(specId),
-      Api.config().catch(() => null)
+      Api.listPlans(specId)
     ])
-      .then(([nextSpec, nextOperations, nextPlans, nextConfig]) => {
+      .then(([nextSpec, nextOperations, nextPlans]) => {
         if (cancelled) return;
         setSpec(nextSpec);
         setOperations(nextOperations);
         setPlans(nextPlans || []);
-        setConfig(nextConfig);
         const stored = sessionStorage.getItem(planStorageKey(specId));
         const selected = (nextPlans || []).some((plan) => plan.id === stored)
           ? stored
@@ -169,7 +166,6 @@ export default function StudioLayout() {
             <Outlet context={{
               spec,
               operations,
-              config,
               plans,
               plan,
               planId,
