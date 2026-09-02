@@ -41,7 +41,7 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange, expe
         derived,
         value: derived
           ? formatAssertionValue(fromExpected)
-          : (saved.has(item.path) && saved.get(item.path) !== "" ? saved.get(item.path) : item.sample)
+          : (saved.has(item.path) ? saved.get(item.path) : "")
       };
     });
     const extraRows = customPaths.map((path) => {
@@ -160,7 +160,7 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange, expe
               </span>
             </span>
             <input
-              placeholder="Value to assert"
+              placeholder={row.type || "Value to assert"}
               value={row.value}
               disabled={!row.selected || row.derived}
               onChange={(event) => updateRow(row.path, { selected: true, value: event.target.value })}

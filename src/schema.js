@@ -94,6 +94,52 @@ export function sampleFromSchema(schema, name = "", options = {}) {
   return sampleString(schema, name);
 }
 
+export function emptyFromSchema(schema) {
+  const type = schemaType(schema);
+  if (!schema) {
+    return {};
+  }
+  if (type === "file") {
+    return null;
+  }
+  if (type === "object" || (type === "json" && schema.properties)) {
+    const value = {};
+    Object.entries(schema.properties || {}).forEach(([propertyName, property]) => {
+      const childType = schemaType(property);
+      if (childType === "object" || childType === "union" || childType === "array" || childType === "json") {
+        value[propertyName] = emptyFromSchema(property);
+      }
+    });
+    return value;
+  }
+  if (type === "array") {
+    return [];
+  }
+  if (type === "union") {
+    const variants = schemaVariants(schema);
+    return emptyFromSchema(variants[0]?.schema || { type: "object" });
+  }
+  return undefined;
+}
+
+export function typeWatermark(schema) {
+  if (!schema) {
+    return "string";
+  }
+  const type = schemaType(schema);
+  const format = String(schema.format || "").toLowerCase();
+  if (format && !["int32", "int64", "float", "double"].includes(format)) {
+    return format;
+  }
+  if (type === "json") {
+    return "json";
+  }
+  if (type === "union") {
+    return "object";
+  }
+  return type || "string";
+}
+
 function emptyNestedArrays(value) {
   if (Array.isArray(value)) {
     return [];

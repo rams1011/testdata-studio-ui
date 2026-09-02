@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Api } from "../api";
-import { coerce, getPath, humanize, inputType, matchVariantIndex, sampleFromSchema, schemaType, schemaVariants, setPath } from "../schema";
+import { coerce, emptyFromSchema, getPath, humanize, inputType, matchVariantIndex, schemaType, schemaVariants, setPath, typeWatermark } from "../schema";
 
 export default function SchemaForm({ schema, value, onChange, filter = "", caseId, onEnsureCase }) {
-  const fallback = useMemo(() => sampleFromSchema(schema, "", { emptyArrays: true }), [schema]);
+  const fallback = useMemo(() => emptyFromSchema(schema) ?? {}, [schema]);
   const current = value == null ? fallback : value;
   return (
     <div className="schema-form">
@@ -156,9 +156,10 @@ function ArrayField({ schema, path, label, value, onChange, filter, caseId, onEn
         type="button"
         className="btn"
         onClick={() => {
+          const item = emptyFromSchema(itemSchema);
           onChange(setPath(value, path, [
             ...items,
-            sampleFromSchema(itemSchema, label, { emptyArrays: true })
+            item === undefined ? "" : item
           ]));
         }}
       >
@@ -257,7 +258,8 @@ function SchemaField({ schema, path, name, required, value, onChange, filter, ca
       <div className="schema-field">
         {label}
         <textarea
-          defaultValue={current == null ? "" : JSON.stringify(current, null, 2)}
+          defaultValue={current == null || current === "" ? "" : JSON.stringify(current, null, 2)}
+          placeholder={typeWatermark(schema)}
           onChange={(event) => {
             try {
               const trimmed = event.target.value.trim();
@@ -291,6 +293,7 @@ function SchemaField({ schema, path, name, required, value, onChange, filter, ca
           value={displayValue ?? ""}
           onChange={(event) => onChange(setPath(value, path, coerce(event.target.value, type, schema)))}
         >
+          <option value="">{typeWatermark(schema)}</option>
           {schema.enum.map((option) => (
             <option key={String(option)} value={String(option)}>
               {String(option)}
@@ -308,6 +311,7 @@ function SchemaField({ schema, path, name, required, value, onChange, filter, ca
         type={inputType(schema, type)}
         step={type === "integer" ? "1" : type === "number" ? "any" : undefined}
         value={displayValue == null ? "" : displayValue}
+        placeholder={typeWatermark(schema)}
         onChange={(event) => onChange(setPath(value, path, coerce(event.target.value, type, schema)))}
       />
     </div>
@@ -398,8 +402,8 @@ function PolymorphicField({ schema, path, label, required, value, onChange, filt
           value={String(selected)}
           onChange={(event) => {
             const next = variants[Number(event.target.value)]?.schema || branch;
-            const sample = sampleFromSchema(next, label, { emptyArrays: true });
-            onChange(path.length ? setPath(value, path, sample) : sample);
+            const empty = emptyFromSchema(next);
+            onChange(path.length ? setPath(value, path, empty) : empty);
           }}
         >
           {variants.map((item) => (

@@ -9,7 +9,7 @@ import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
 import StatusCodeField from "../components/StatusCodeField";
 import { useToast } from "../components/Toast";
-import { hasResponseBodySchema, sampleFromSchema } from "../schema";
+import { emptyFromSchema, hasResponseBodySchema, typeWatermark } from "../schema";
 import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { generateToast } from "./CasesPage";
@@ -17,7 +17,7 @@ import { lastOpKey } from "./StudioLayout";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
-  const { spec, plan, planId } = useOutletContext();
+  const { spec, planId } = useOutletContext();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [operation, setOperation] = useState(null);
@@ -61,7 +61,7 @@ export default function OperationPage() {
         || nextForm.contentType;
       const nextBody = decodeRequestBody(
         existing?.requestBody
-          ?? sampleFromSchema(nextOperation.requestBody?.jsonSchema, "", { emptyArrays: true }),
+          ?? emptyFromSchema(nextOperation.requestBody?.jsonSchema) ?? {},
         nextOperation.requestBody?.jsonSchema,
         nextForm.contentType
       );
@@ -265,7 +265,7 @@ export default function OperationPage() {
     <div className="op-page">
       <div className="topbar sticky-actions">
         <div>
-          <div className="crumb">{plan?.name ? `${plan.name} · ` : ""}{operation.tag} · {operation.key}</div>
+          <div className="crumb">{operation.tag} · {operation.key}</div>
           <h2>{operation.summary || operation.key}</h2>
           <div className="crumb">
             <span className={`method ${operation.method}`}>{operation.method}</span>
@@ -508,7 +508,7 @@ function mapParams(parameters, location) {
   (parameters || [])
     .filter((parameter) => parameter.in === location)
     .forEach((parameter) => {
-      result[parameter.name] = parameter.sample || "";
+      result[parameter.name] = "";
     });
   return result;
 }
@@ -560,6 +560,7 @@ function ParamGroup({ label, parameters, values, onChange }) {
             </label>
             <input
               value={values[parameter.name] || ""}
+              placeholder={typeWatermark(parameter.schema)}
               onChange={(event) => onChange({ ...values, [parameter.name]: event.target.value })}
             />
           </div>
@@ -581,6 +582,7 @@ function ArrayParamField({ parameter, values, onChange }) {
         <div className="array-item" key={index} style={{ marginBottom: 6 }}>
           <input
             value={item}
+            placeholder={typeWatermark(parameter.schema?.items || parameter.schema)}
             onChange={(event) => {
               const next = [...items];
               next[index] = event.target.value;
