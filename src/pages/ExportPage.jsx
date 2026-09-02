@@ -37,6 +37,7 @@ export default function ExportPage() {
         <h3>Download</h3>
         <p className="hint">
           Downloads api-automation Excel for the selected plan only. Request bodies are written into the RequestBody column.
+          Multipart files are copied to api-automation <code>src/test/data/files</code> and listed in the UploadFiles column.
         </p>
         <div className="field">
           <label>Test plan</label>

@@ -293,11 +293,12 @@ export default function Sidebar({
                     type="button"
                     className="tag-label"
                     aria-expanded={open}
+                    aria-label={`${displayTag(tag)}, ${ops.length} APIs`}
                     onClick={() => toggleTag(tag)}
                   >
                     <span className="tag-caret">{open ? "▾" : "▸"}</span>
                     {displayTag(tag)}
-                    <span className="tag-count">{ops.length}</span>
+                    <span className="tag-count" title={`${ops.length} APIs`}>{ops.length}</span>
                   </button>
                   {open ? ops.map(renderOperation) : null}
                 </div>

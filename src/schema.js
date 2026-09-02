@@ -37,6 +37,8 @@ export function hasResponseBodySchema(response) {
 
 export function schemaType(schema) {
   if (!schema) return "object";
+  const format = String(schema.format || "").toLowerCase();
+  if (format === "binary" || format === "byte") return "file";
   if (Array.isArray(schema.type)) {
     return schema.type.find((item) => item !== "null") || schema.type[0];
   }
@@ -44,7 +46,7 @@ export function schemaType(schema) {
   if (schema.properties) return "object";
   if (schema.items) return "array";
   if (schema.enum) return "string";
-  if (schema.oneOf || schema.anyOf) return "json";
+  if (schema.oneOf || schema.anyOf) return "union";
   if (schema.pattern != null || schema.minLength != null || schema.maxLength != null) {
     return "string";
   }
@@ -66,6 +68,7 @@ export function sampleFromSchema(schema, name = "", options = {}) {
     return options.emptyArrays ? emptyNestedArrays(cloneSample(schema.example)) : cloneSample(schema.example);
   }
   if (schema.enum && schema.enum.length) return schema.enum[0];
+  if (type === "file") return null;
   if (type === "object") {
     const value = {};
     Object.entries(schema.properties || {}).forEach(([propertyName, property]) => {
@@ -81,6 +84,10 @@ export function sampleFromSchema(schema, name = "", options = {}) {
   }
   if (type === "boolean") return true;
   if (type === "integer" || type === "number") return 0;
+  if (type === "union") {
+    const variants = schemaVariants(schema);
+    return sampleFromSchema(variants[0]?.schema || { type: "object" }, name, options);
+  }
   if (type === "json") {
     return schema.properties ? sampleFromSchema({ ...schema, type: "object" }, name, options) : "sample";
   }
@@ -232,6 +239,57 @@ export function serializeJsonPathAssertions(selections) {
     .filter((item) => item.selected && item.path && item.path.trim())
     .map((item) => `${item.path.trim()}=${item.value == null ? "" : String(item.value).trim()}`);
   return pairs.length ? pairs.join("|") : "NA";
+}
+
+export function schemaVariants(schema) {
+  const list = schema?.oneOf || schema?.anyOf;
+  if (!list?.length) {
+    return [];
+  }
+  return list.map((item, index) => ({
+    index,
+    schema: item,
+    label: variantLabel(item, index)
+  }));
+}
+
+export function matchVariantIndex(schema, value) {
+  const variants = schema?.oneOf || schema?.anyOf || [];
+  if (!variants.length) {
+    return 0;
+  }
+  const discriminator = schema?.discriminator;
+  const propertyName = discriminator?.propertyName;
+  if (propertyName && value && typeof value === "object" && !Array.isArray(value) && value[propertyName] != null) {
+    const tag = String(value[propertyName]);
+    const mapped = discriminator.mapping?.[tag];
+    const mappedIndex = variants.findIndex((item) =>
+      (item.title && String(item.title) === tag)
+      || (mapped && (item.$ref === mapped || String(item.$ref || "").endsWith(String(mapped))))
+      || (item.properties?.[propertyName]?.enum || []).map(String).includes(tag)
+      || String(item.properties?.[propertyName]?.const ?? "") === tag
+    );
+    if (mappedIndex >= 0) {
+      return mappedIndex;
+    }
+  }
+  return 0;
+}
+
+function variantLabel(schema, index) {
+  if (!schema) {
+    return `Option ${index + 1}`;
+  }
+  if (schema.title) {
+    return schema.title;
+  }
+  if (schema.description) {
+    return schema.description;
+  }
+  if (schema.type) {
+    return String(schema.type);
+  }
+  return `Option ${index + 1}`;
 }
 
 function resolveSchemaBranch(schema) {

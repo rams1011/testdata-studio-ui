@@ -4,7 +4,7 @@ import { Api } from "../api";
 import RequestBodyEditor from "../components/RequestBodyEditor";
 import JsonPathAssertionsPicker from "../components/JsonPathAssertionsPicker";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
-import AuthSettings, { useSpecAuth } from "../components/AuthSettings";
+import AuthSettings, { emptyAuth, useSpecAuth } from "../components/AuthSettings";
 import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
 import StatusCodeField from "../components/StatusCodeField";
@@ -23,14 +23,22 @@ export default function OperationPage() {
   const [cases, setCases] = useState([]);
   const [form, setForm] = useState(null);
   const [requestBody, setRequestBody] = useState({});
+  const [boundCaseId, setBoundCaseId] = useState(caseId);
   const [auth, setAuth] = useSpecAuth(specId);
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(null);
   const baseline = useRef("");
+  const skipUnsavedPrompt = useRef(false);
+  const [, setCleanNonce] = useState(0);
 
   useEffect(() => {
     sessionStorage.setItem(lastOpKey(specId), operationKey);
   }, [specId, operationKey]);
+
+  useEffect(() => {
+    setBoundCaseId(caseId);
+    skipUnsavedPrompt.current = false;
+  }, [caseId]);
 
   useEffect(() => {
     if (!planId) return;
@@ -59,7 +67,12 @@ export default function OperationPage() {
   }, [specId, operationKey, caseId, spec, planId, toast, navigate]);
 
   const dirty = form ? snapshot(form, requestBody) !== baseline.current : false;
-  const blocker = useBlocker(dirty);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
+    if (skipUnsavedPrompt.current) {
+      return false;
+    }
+    return dirty && currentLocation.pathname !== nextLocation.pathname;
+  });
 
   useEffect(() => {
     if (blocker.state !== "blocked") return;
@@ -80,12 +93,34 @@ export default function OperationPage() {
     return () => window.removeEventListener("beforeunload", onLeave);
   }, [dirty]);
 
+  useEffect(() => {
+    const suggested = operation?.auth;
+    if (!suggested || !suggested.type || suggested.type === "NONE") {
+      return;
+    }
+    setAuth((current) => {
+      if (current?.type && current.type !== "NONE") {
+        return current;
+      }
+      return {
+        ...emptyAuth(),
+        ...current,
+        type: suggested.type,
+        apiKeyName: suggested.apiKeyName || current?.apiKeyName || "X-API-Key",
+        apiKeyIn: suggested.apiKeyIn || current?.apiKeyIn || "header",
+        tokenUrl: suggested.tokenUrl || current?.tokenUrl || "",
+        grantType: suggested.grantType || current?.grantType || "client_credentials"
+      };
+    });
+  }, [operation?.key]);
+
   const paramGroups = useMemo(() => {
-    if (!operation) return { path: [], query: [], header: [] };
+    if (!operation) return { path: [], query: [], header: [], cookie: [] };
     return {
       path: (operation.parameters || []).filter((item) => item.in === "path"),
       query: (operation.parameters || []).filter((item) => item.in === "query"),
-      header: (operation.parameters || []).filter((item) => item.in === "header")
+      header: (operation.parameters || []).filter((item) => item.in === "header"),
+      cookie: (operation.parameters || []).filter((item) => item.in === "cookie")
     };
   }, [operation]);
 
@@ -97,18 +132,38 @@ export default function OperationPage() {
     }));
   }, [operation, form?.statusCode]);
 
+  function markClean(nextForm, nextBody) {
+    baseline.current = snapshot(nextForm, nextBody);
+    setCleanNonce((value) => value + 1);
+  }
+
   async function save() {
     const payload = casePayload();
     try {
-      const saved = caseId
-        ? await Api.updateCase(caseId, payload)
+      const saved = boundCaseId
+        ? await Api.updateCase(boundCaseId, payload)
         : await Api.createCase(payload);
-      baseline.current = snapshot(form, requestBody);
-      toast(caseId ? "Test case updated" : "Test case saved");
-      navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${saved.id}`);
+      markClean(form, requestBody);
+      setBoundCaseId(saved.id);
+      toast(boundCaseId ? "Test case updated" : "Test case saved");
+      const nextPath = `/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${saved.id}`;
+      if (caseId !== saved.id) {
+        skipUnsavedPrompt.current = true;
+        navigate(nextPath);
+      }
     } catch (error) {
       toast(error.message, true);
     }
+  }
+
+  async function ensureCase() {
+    if (boundCaseId) {
+      return boundCaseId;
+    }
+    const saved = await Api.createCase(casePayload());
+    setBoundCaseId(saved.id);
+    markClean(form, requestBody);
+    return saved.id;
   }
 
   function casePayload() {
@@ -223,7 +278,7 @@ export default function OperationPage() {
             {running === "current" ? "Running…" : "Run"}
           </button>
           <button type="button" className="btn primary" onClick={save}>
-            {caseId ? "Update" : "Save"}
+            {boundCaseId ? "Update" : "Save"}
           </button>
         </div>
       </div>
@@ -234,7 +289,7 @@ export default function OperationPage() {
 
       <div className="grid">
         <div>
-          <AuthSettings auth={auth} onChange={setAuth} />
+          <AuthSettings auth={auth} onChange={setAuth} specAuth={operation.auth} />
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Test case</h3>
@@ -243,6 +298,20 @@ export default function OperationPage() {
               <Field label="Test group" value={form.testGroup} onChange={(testGroup) => setForm({ ...form, testGroup })} />
               <SelectField label="Enabled" value={form.enabled} options={["Y", "N"]} onChange={(enabled) => setForm({ ...form, enabled })} />
             </div>
+            {(operation.servers || spec.servers || []).length > 1 ? (
+              <SelectField
+                label="Server"
+                value={form.baseUrl}
+                options={(operation.servers || spec.servers).map((server) => {
+                  const url = server.resolvedUrl || server.url;
+                  return {
+                    value: url,
+                    label: server.description ? `${server.description} · ${url}` : url
+                  };
+                })}
+                onChange={(baseUrl) => setForm({ ...form, baseUrl })}
+              />
+            ) : null}
             <Field label="Base URL" value={form.baseUrl} onChange={(baseUrl) => setForm({ ...form, baseUrl })} />
             <div className="row-3">
               <StatusCodeField
@@ -264,6 +333,17 @@ export default function OperationPage() {
               value={blankNa(form.contentType)}
               onChange={(contentType) => setForm({ ...form, contentType })}
             />
+            {(operation.requestContentTypes || []).length > 1 ? (
+              <SelectField
+                label="Spec content types"
+                value={form.contentType}
+                options={operation.requestContentTypes.map((item) => ({
+                  value: mappedContentType(item),
+                  label: item
+                }))}
+                onChange={(contentType) => setForm({ ...form, contentType })}
+              />
+            ) : null}
           </div>
 
           {operation.parameters?.length ? (
@@ -272,6 +352,7 @@ export default function OperationPage() {
               <ParamGroup label="Path" parameters={paramGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
               <ParamGroup label="Query" parameters={paramGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
               <ParamGroup label="Headers" parameters={paramGroups.header} values={form.headers} onChange={(headers) => setForm({ ...form, headers })} />
+              <ParamGroup label="Cookies" parameters={paramGroups.cookie} values={form.cookieParams} onChange={(cookieParams) => setForm({ ...form, cookieParams })} />
             </div>
           ) : null}
 
@@ -281,6 +362,8 @@ export default function OperationPage() {
               <RequestBodyEditor
                 key={`${operationKey}-${caseId || "new"}`}
                 resetKey={`${operationKey}-${caseId || "new"}`}
+                caseId={boundCaseId}
+                onEnsureCase={ensureCase}
                 schema={operation.requestBody.jsonSchema}
                 value={requestBody}
                 onChange={setRequestBody}
@@ -377,7 +460,8 @@ function formFromOperation(operation, spec) {
     contentType: blankNa(defaults.contentType),
     pathParams: mapParams(operation.parameters, "path"),
     queryParams: mapParams(operation.parameters, "query"),
-    headers: mapParams(operation.parameters, "header")
+    headers: mapParams(operation.parameters, "header"),
+    cookieParams: mapParams(operation.parameters, "cookie")
   };
 }
 
@@ -395,7 +479,8 @@ function formFromCase(testCase) {
     contentType: blankNa(testCase.contentType),
     pathParams: testCase.pathParams || {},
     queryParams: testCase.queryParams || {},
-    headers: testCase.headers || {}
+    headers: testCase.headers || {},
+    cookieParams: testCase.cookieParams || {}
   };
 }
 
@@ -441,17 +526,108 @@ function ParamGroup({ label, parameters, values, onChange }) {
     <>
       <div className="tag-label" style={{ color: "#696969" }}>{label}</div>
       {parameters.map((parameter) => (
-        <div className="field" key={parameter.name}>
-          <label>
-            {parameter.name}{parameter.required ? " *" : ""}
-            {parameter.description ? <span className="hint">{parameter.description}</span> : null}
-          </label>
-          <input
-            value={values[parameter.name] || ""}
-            onChange={(event) => onChange({ ...values, [parameter.name]: event.target.value })}
+        isArrayParam(parameter) ? (
+          <ArrayParamField
+            key={parameter.name}
+            parameter={parameter}
+            values={values}
+            onChange={onChange}
           />
-        </div>
+        ) : (
+          <div className="field" key={parameter.name}>
+            <label>
+              {parameter.name}{parameter.required ? " *" : ""}
+              {parameter.description ? <span className="hint">{parameter.description}</span> : null}
+            </label>
+            <input
+              value={values[parameter.name] || ""}
+              onChange={(event) => onChange({ ...values, [parameter.name]: event.target.value })}
+            />
+          </div>
+        )
       ))}
     </>
   );
+}
+
+function ArrayParamField({ parameter, values, onChange }) {
+  const items = parseListValue(values[parameter.name]);
+  return (
+    <div className="field">
+      <label>
+        {parameter.name}{parameter.required ? " *" : ""}
+        <span className="hint">{parameter.description || "Array — repeated query/header values"}</span>
+      </label>
+      {items.map((item, index) => (
+        <div className="array-item" key={index} style={{ marginBottom: 6 }}>
+          <input
+            value={item}
+            onChange={(event) => {
+              const next = [...items];
+              next[index] = event.target.value;
+              onChange({ ...values, [parameter.name]: serializeListValue(next) });
+            }}
+          />
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => {
+              const next = items.filter((_, i) => i !== index);
+              onChange({ ...values, [parameter.name]: serializeListValue(next.length ? next : [""]) });
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="btn"
+        onClick={() => onChange({ ...values, [parameter.name]: serializeListValue([...items, ""]) })}
+      >
+        Add value
+      </button>
+    </div>
+  );
+}
+
+function isArrayParam(parameter) {
+  const type = parameter?.schema?.type;
+  return type === "array" || (Array.isArray(type) && type.includes("array"));
+}
+
+function parseListValue(raw) {
+  if (raw == null || raw === "") {
+    return [""];
+  }
+  const text = String(raw).trim();
+  if (text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => (item == null ? "" : String(item)));
+      }
+    } catch {
+      // scalar
+    }
+  }
+  return [String(raw)];
+}
+
+function serializeListValue(values) {
+  const cleaned = (values || []).map((item) => String(item ?? ""));
+  if (cleaned.length <= 1) {
+    return cleaned[0] || "";
+  }
+  return JSON.stringify(cleaned);
+}
+
+function mappedContentType(mediaType) {
+  const value = String(mediaType || "").toLowerCase();
+  if (value.includes("json")) return "JSON";
+  if (value.includes("multipart")) return "MULTIPART";
+  if (value.includes("urlencoded")) return "FORM";
+  if (value.includes("xml")) return "XML";
+  if (value.startsWith("text/")) return "TEXT";
+  return mediaType;
 }

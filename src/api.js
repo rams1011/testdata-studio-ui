@@ -265,5 +265,11 @@ export const Api = {
 
   runPlan(payload) {
     return request("/api/testdata/run-plan", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  uploadRequestFile(caseId, file) {
+    const data = new FormData();
+    data.append("file", file);
+    return request(`/api/testdata/${encodeURIComponent(caseId)}/files`, { method: "POST", body: data });
   }
 };

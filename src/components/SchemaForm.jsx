@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { coerce, getPath, humanize, inputType, sampleFromSchema, schemaType, setPath } from "../schema";
+import { Api } from "../api";
+import { coerce, getPath, humanize, inputType, matchVariantIndex, sampleFromSchema, schemaType, schemaVariants, setPath } from "../schema";
 
-export default function SchemaForm({ schema, value, onChange, filter = "" }) {
+export default function SchemaForm({ schema, value, onChange, filter = "", caseId, onEnsureCase }) {
   const fallback = useMemo(() => sampleFromSchema(schema, "", { emptyArrays: true }), [schema]);
   const current = value == null ? fallback : value;
   return (
@@ -13,14 +14,30 @@ export default function SchemaForm({ schema, value, onChange, filter = "" }) {
         value={current}
         onChange={onChange}
         filter={filter.trim()}
+        caseId={caseId}
+        onEnsureCase={onEnsureCase}
       />
     </div>
   );
 }
 
-function SchemaNode({ schema, path, label, value, onChange, filter }) {
+function SchemaNode({ schema, path, label, value, onChange, filter, caseId, onEnsureCase }) {
   const type = schemaType(schema);
   const childFilter = filter && nodeSelfMatches(label, schema, filter) ? "" : filter;
+  if ((schema?.oneOf || schema?.anyOf) && schemaVariants(schema).length) {
+    return (
+      <PolymorphicField
+        schema={schema}
+        path={path}
+        label={label}
+        value={value}
+        onChange={onChange}
+        filter={childFilter}
+        caseId={caseId}
+        onEnsureCase={onEnsureCase}
+      />
+    );
+  }
   if (type === "object" && schema && schema.properties) {
     const requiredFields = new Set(schema.required || []);
     const entries = Object.entries(schema.properties).filter(([name, property]) =>
@@ -42,6 +59,8 @@ function SchemaNode({ schema, path, label, value, onChange, filter }) {
           value={value}
           onChange={onChange}
           filter={childFilter}
+          caseId={caseId}
+          onEnsureCase={onEnsureCase}
         />
       ));
     }
@@ -64,13 +83,26 @@ function SchemaNode({ schema, path, label, value, onChange, filter }) {
             value={value}
             onChange={onChange}
             filter={childFilter}
+            caseId={caseId}
+            onEnsureCase={onEnsureCase}
           />
         ))}
       </div>
     );
   }
   if (type === "array") {
-    return <ArrayField schema={schema} path={path} label={label} value={value} onChange={onChange} filter={childFilter} />;
+    return (
+      <ArrayField
+        schema={schema}
+        path={path}
+        label={label}
+        value={value}
+        onChange={onChange}
+        filter={childFilter}
+        caseId={caseId}
+        onEnsureCase={onEnsureCase}
+      />
+    );
   }
   return (
     <SchemaField
@@ -81,11 +113,13 @@ function SchemaNode({ schema, path, label, value, onChange, filter }) {
       value={value}
       onChange={onChange}
       filter={filter}
+      caseId={caseId}
+      onEnsureCase={onEnsureCase}
     />
   );
 }
 
-function ArrayField({ schema, path, label, value, onChange, filter }) {
+function ArrayField({ schema, path, label, value, onChange, filter, caseId, onEnsureCase }) {
   const items = getPath(value, path) || [];
   const itemSchema = schema.items || { type: "string" };
   return (
@@ -113,6 +147,8 @@ function ArrayField({ schema, path, label, value, onChange, filter }) {
             value={value}
             onChange={onChange}
             filter={filter}
+            caseId={caseId}
+            onEnsureCase={onEnsureCase}
           />
         </div>
       ))}
@@ -133,7 +169,22 @@ function ArrayField({ schema, path, label, value, onChange, filter }) {
   );
 }
 
-function SchemaField({ schema, path, name, required, value, onChange, filter }) {
+function SchemaField({ schema, path, name, required, value, onChange, filter, caseId, onEnsureCase }) {
+  if (schema?.oneOf || schema?.anyOf) {
+    return (
+      <PolymorphicField
+        schema={schema}
+        path={path}
+        label={name}
+        required={required}
+        value={value}
+        onChange={onChange}
+        filter={filter}
+        caseId={caseId}
+        onEnsureCase={onEnsureCase}
+      />
+    );
+  }
   const type = schemaType(schema);
   if (type === "object" && schema.properties) {
     return (
@@ -143,7 +194,7 @@ function SchemaField({ schema, path, name, required, value, onChange, filter }) 
         summary={`${Object.keys(schema.properties).length} fields`}
         forceOpen={Boolean(filter)}
       >
-        <SchemaNode schema={schema} path={path} label={name} value={value} onChange={onChange} filter={filter} />
+        <SchemaNode schema={schema} path={path} label={name} value={value} onChange={onChange} filter={filter} caseId={caseId} onEnsureCase={onEnsureCase} />
       </NestedFold>
     );
   }
@@ -156,8 +207,22 @@ function SchemaField({ schema, path, name, required, value, onChange, filter }) 
         summary={`${items.length} item${items.length === 1 ? "" : "s"}`}
         forceOpen={Boolean(filter)}
       >
-        <ArrayField schema={schema} path={path} label={name} value={value} onChange={onChange} filter={filter} />
+        <ArrayField schema={schema} path={path} label={name} value={value} onChange={onChange} filter={filter} caseId={caseId} onEnsureCase={onEnsureCase} />
       </NestedFold>
+    );
+  }
+  if (type === "file") {
+    return (
+      <FileField
+        caseId={caseId}
+        onEnsureCase={onEnsureCase}
+        schema={schema}
+        path={path}
+        name={name}
+        required={required}
+        value={value}
+        onChange={onChange}
+      />
     );
   }
 
@@ -249,6 +314,113 @@ function SchemaField({ schema, path, name, required, value, onChange, filter }) 
   );
 }
 
+function FileField({ caseId, onEnsureCase, schema, path, name, required, value, onChange }) {
+  const current = getPath(value, path);
+  const meta = isFileRef(current) ? current : null;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const label = (
+    <div className="schema-label">
+      <span>{humanize(name)}</span>
+      {required ? <span className="req">*</span> : null}
+      {schema && schema.description ? <span className="hint">{schema.description}</span> : null}
+    </div>
+  );
+
+  async function pick(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const id = caseId || (onEnsureCase ? await onEnsureCase() : null);
+      if (!id) {
+        setError("Save the case before uploading a file.");
+        return;
+      }
+      const uploaded = await Api.uploadRequestFile(id, file);
+      onChange(setPath(value, path, {
+        fileId: uploaded.fileId,
+        testCaseId: uploaded.testCaseId || id,
+        fileName: uploaded.fileName,
+        contentType: uploaded.contentType,
+        sizeBytes: uploaded.sizeBytes
+      }));
+    } catch (exception) {
+      setError(exception.message || "Upload failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="schema-field file-field">
+      {label}
+      {meta ? (
+        <div className="file-field-meta">
+          <span className="file-field-name">{meta.fileName}</span>
+          {meta.sizeBytes != null ? <span className="hint">{formatSize(meta.sizeBytes)}</span> : null}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => onChange(setPath(value, path, null))}
+          >
+            Remove
+          </button>
+        </div>
+      ) : (
+        <div className="hint">No file selected. Uploads are stored on this test case.</div>
+      )}
+      <input type="file" onChange={pick} disabled={busy} />
+      {busy ? <div className="hint">Uploading…</div> : null}
+      {error ? <div className="body-json-error">{error}</div> : null}
+    </div>
+  );
+}
+
+function PolymorphicField({ schema, path, label, required, value, onChange, filter, caseId, onEnsureCase }) {
+  const variants = schemaVariants(schema);
+  const current = path.length ? getPath(value, path) : value;
+  const selected = matchVariantIndex(schema, current);
+  const branch = variants[selected]?.schema || { type: "object" };
+  return (
+    <div className="schema-object">
+      <div className="schema-field">
+        <div className="schema-label">
+          <span>{humanize(label || "Type")}</span>
+          {required ? <span className="req">*</span> : null}
+          <span className="hint">oneOf / anyOf</span>
+        </div>
+        <select
+          value={String(selected)}
+          onChange={(event) => {
+            const next = variants[Number(event.target.value)]?.schema || branch;
+            const sample = sampleFromSchema(next, label, { emptyArrays: true });
+            onChange(path.length ? setPath(value, path, sample) : sample);
+          }}
+        >
+          {variants.map((item) => (
+            <option key={item.index} value={String(item.index)}>{item.label}</option>
+          ))}
+        </select>
+      </div>
+      <SchemaNode
+        schema={branch}
+        path={path}
+        label={label}
+        value={value}
+        onChange={onChange}
+        filter={filter}
+        caseId={caseId}
+        onEnsureCase={onEnsureCase}
+      />
+    </div>
+  );
+}
+
 function NestedFold({ name, required, summary, forceOpen, children }) {
   const [open, setOpen] = useState(false);
   const show = forceOpen || open;
@@ -272,9 +444,31 @@ function NestedFold({ name, required, summary, forceOpen, children }) {
 
 function isScalar(schema) {
   const type = schemaType(schema);
-  if (type === "array") return false;
+  if (type === "array" || type === "union" || schema?.oneOf || schema?.anyOf) return false;
   if (type === "object" && schema && schema.properties) return false;
   return true;
+}
+
+function isFileRef(value) {
+  return value != null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && typeof value.fileId === "string"
+    && value.fileId.trim() !== "";
+}
+
+function formatSize(bytes) {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size < 0) {
+    return "";
+  }
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function nodeSelfMatches(name, schema, filter) {

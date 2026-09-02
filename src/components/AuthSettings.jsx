@@ -8,7 +8,11 @@ export function emptyAuth() {
     token: "",
     apiKey: "",
     apiKeyName: "X-API-Key",
-    apiKeyIn: "header"
+    apiKeyIn: "header",
+    clientId: "",
+    clientSecret: "",
+    tokenUrl: "",
+    grantType: "client_credentials"
   };
 }
 
@@ -54,10 +58,11 @@ const AUTH_TYPES = [
   { value: "NONE", label: "None" },
   { value: "BASIC", label: "Credentials (Basic)" },
   { value: "BEARER", label: "Bearer token" },
-  { value: "API_KEY", label: "API key" }
+  { value: "API_KEY", label: "API key" },
+  { value: "OAUTH2", label: "OAuth2 client credentials" }
 ];
 
-export default function AuthSettings({ auth, onChange }) {
+export default function AuthSettings({ auth, onChange, specAuth }) {
   const type = auth?.type || "NONE";
 
   function patch(fields) {
@@ -74,6 +79,7 @@ export default function AuthSettings({ auth, onChange }) {
       </summary>
       <p className="hint" style={{ marginTop: 8, marginBottom: 12 }}>
         Used only when you click Run — not saved with the case. Choose None for 401 tests that already set Authorization.
+        {specAuth && specAuth.type && specAuth.type !== "NONE" ? ` Spec uses ${specAuth.type}${specAuth.schemeName ? ` (${specAuth.schemeName})` : ""}.` : ""}
       </p>
       {type === "NONE" ? (
         <p className="hint" style={{ marginBottom: 12 }}>
@@ -136,6 +142,7 @@ export default function AuthSettings({ auth, onChange }) {
               <select value={auth.apiKeyIn || "header"} onChange={(event) => patch({ apiKeyIn: event.target.value })}>
                 <option value="header">Header</option>
                 <option value="query">Query</option>
+                <option value="cookie">Cookie</option>
               </select>
             </div>
             <div className="field">
@@ -150,6 +157,78 @@ export default function AuthSettings({ auth, onChange }) {
           </div>
         </>
       ) : null}
+      {type === "OAUTH2" ? (
+        <>
+          <div className="field">
+            <label>Token URL</label>
+            <input
+              value={auth.tokenUrl || ""}
+              onChange={(event) => patch({ tokenUrl: event.target.value })}
+              placeholder="https://auth.example.com/oauth/token"
+            />
+          </div>
+          <div className="row-2">
+            <div className="field">
+              <label>Client id</label>
+              <input value={auth.clientId || ""} onChange={(event) => patch({ clientId: event.target.value })} />
+            </div>
+            <div className="field">
+              <label>Client secret</label>
+              <input
+                type="password"
+                autoComplete="off"
+                value={auth.clientSecret || ""}
+                onChange={(event) => patch({ clientSecret: event.target.value })}
+              />
+            </div>
+          </div>
+          <div className="row-2">
+            <SelectFieldLike
+              label="Grant"
+              value={auth.grantType || "client_credentials"}
+              options={[
+                { value: "client_credentials", label: "Client credentials" },
+                { value: "password", label: "Password" }
+              ]}
+              onChange={(grantType) => patch({ grantType })}
+            />
+            <div className="field">
+              <label>Or paste access token</label>
+              <input
+                type="password"
+                autoComplete="off"
+                value={auth.token || ""}
+                onChange={(event) => patch({ token: event.target.value })}
+              />
+            </div>
+          </div>
+          {auth.grantType === "password" ? (
+            <div className="row-2">
+              <div className="field">
+                <label>Username</label>
+                <input value={auth.username || ""} onChange={(event) => patch({ username: event.target.value })} />
+              </div>
+              <div className="field">
+                <label>Password</label>
+                <input type="password" autoComplete="off" value={auth.password || ""} onChange={(event) => patch({ password: event.target.value })} />
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </details>
+  );
+}
+
+function SelectFieldLike({ label, value, options, onChange }) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
   );
 }
