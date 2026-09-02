@@ -1,5 +1,4 @@
 const PREVIEW_CHARS = 80;
-const BODY_PREVIEW_LINES = 12;
 
 function prettyBody(body) {
   if (body == null || body === "") {
@@ -32,17 +31,6 @@ function previewText(value, limit = PREVIEW_CHARS) {
   return `${compact.slice(0, limit)}…`;
 }
 
-function previewBody(pretty) {
-  if (!pretty) {
-    return "";
-  }
-  const lines = pretty.split("\n");
-  if (lines.length <= BODY_PREVIEW_LINES && pretty.length <= PREVIEW_CHARS * 8) {
-    return pretty;
-  }
-  return `${lines.slice(0, BODY_PREVIEW_LINES).join("\n")}\n…`;
-}
-
 function assertionLabel(item) {
   if (item.name === "status") {
     return "Status";
@@ -56,20 +44,18 @@ function assertionLabel(item) {
   return item.path || item.name || "Assertion";
 }
 
-function HoverJson({ value, preview, multiline = false }) {
+function HoverJson({ value }) {
   const full = prettyBody(value) || String(value ?? "");
-  const shown = preview == null || preview === "" ? previewText(value) : preview;
+  const shown = previewText(value);
   if (!full) {
     return null;
   }
   if (full === shown) {
-    return multiline ? <pre className="json-preview run-body">{shown}</pre> : shown;
+    return shown;
   }
   return (
-    <span className={`hover-json${multiline ? " hover-json-block" : ""}`}>
-      {multiline
-        ? <pre className="json-preview run-body">{shown}</pre>
-        : <span className="hover-json-preview">{shown}</span>}
+    <span className="hover-json">
+      <span className="hover-json-preview">{shown}</span>
       <span className="hover-json-tip" role="tooltip">{full}</span>
     </span>
   );
@@ -129,7 +115,7 @@ export default function RunResultPanel({ result }) {
       {body ? (
         <>
           <h3 style={{ marginTop: 16 }}>Response body</h3>
-          <HoverJson value={result.responseBody} preview={previewBody(body)} multiline />
+          <pre className="json-preview">{body}</pre>
         </>
       ) : null}
     </div>
