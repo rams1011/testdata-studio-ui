@@ -1,19 +1,29 @@
 import SchemaBodyEditor from "./SchemaBodyEditor";
 import { sampleFromSchema } from "../schema";
+import { isXmlContentType } from "../xml";
 
-export default function RequestBodyEditor({ schema, value, onChange, resetKey, caseId, onEnsureCase }) {
+export default function RequestBodyEditor({ schema, value, onChange, resetKey, caseId, onEnsureCase, contentType }) {
+  const xml = isXmlContentType(contentType);
   return (
-    <SchemaBodyEditor
-      schema={schema}
-      value={value}
-      onChange={onChange}
-      resetKey={resetKey}
-      caseId={caseId}
-      onEnsureCase={onEnsureCase}
-      searchAria="Search request body fields"
-      jsonAria="Request body JSON"
-      tabsAria="Request body editor"
-      onFillSample={() => onChange(sampleFromSchema(schema))}
-    />
+    <>
+      {xml ? (
+        <p className="hint" style={{ margin: "0 0 12px" }}>
+          Sent as XML. The XML tab is the payload; Form maps schema fields to elements.
+        </p>
+      ) : null}
+      <SchemaBodyEditor
+        schema={schema}
+        value={value}
+        onChange={onChange}
+        resetKey={`${resetKey}:${xml ? "xml" : "json"}`}
+        caseId={caseId}
+        onEnsureCase={onEnsureCase}
+        format={xml ? "xml" : "json"}
+        searchAria="Search request body fields"
+        jsonAria={xml ? "Request body XML" : "Request body JSON"}
+        tabsAria="Request body editor"
+        onFillSample={() => onChange(sampleFromSchema(schema))}
+      />
+    </>
   );
 }

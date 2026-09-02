@@ -1,16 +1,18 @@
 import SchemaBodyEditor from "./SchemaBodyEditor";
 import { hasResponseSchema, sampleFromSchema } from "../schema";
+import { isXmlContentType, jsonToXml, looksLikeXml, xmlToJson } from "../xml";
 
-export default function ExpectedResponseEditor({ schema, sample, value, onChange, onBuilt, resetKey }) {
+export default function ExpectedResponseEditor({ schema, sample, value, onChange, onBuilt, resetKey, contentType }) {
+  const xml = isXmlContentType(contentType);
   const canBuild = hasResponseSchema(schema);
-  const parsed = parseExpected(value);
+  const parsed = parseExpected(value, schema, xml);
 
   function persist(next) {
     if (next == null) {
       onChange("");
       return;
     }
-    onChange(stringify(next));
+    onChange(stringify(next, schema, xml));
     if (onBuilt) {
       onBuilt(next);
     }
@@ -31,7 +33,7 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
           onChange={(event) => onChange(event.target.value)}
           placeholder="Leave blank if none"
           spellCheck={false}
-          aria-label="Expected response JSON"
+          aria-label={xml ? "Expected response XML" : "Expected response JSON"}
         />
       </div>
     );
@@ -40,15 +42,18 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
   return (
     <div className="expected-response">
       <p className="hint" style={{ margin: "0 0 12px" }}>
-        Optional JSON body to compare. Leave blank if you only check status.
+        {xml
+          ? "Optional XML body to compare. Leave blank if you only check status."
+          : "Optional JSON body to compare. Leave blank if you only check status."}
       </p>
       <SchemaBodyEditor
         schema={schema || { type: "object" }}
         value={parsed}
         onChange={persist}
-        resetKey={resetKey}
+        resetKey={`${resetKey}:${xml ? "xml" : "json"}`}
+        format={xml ? "xml" : "json"}
         searchAria="Search expected response fields"
-        jsonAria="Expected response JSON"
+        jsonAria={xml ? "Expected response XML" : "Expected response JSON"}
         tabsAria="Expected response editor"
         emptyToNull
         onFillSample={fillSample}
@@ -68,13 +73,16 @@ function blankNa(value) {
   return text.toUpperCase() === "NA" ? "" : value;
 }
 
-function parseExpected(value) {
+function parseExpected(value, schema, xml) {
   if (value == null) {
     return null;
   }
   const text = String(value).trim();
   if (!text || text.toUpperCase() === "NA") {
     return null;
+  }
+  if (xml || looksLikeXml(text)) {
+    return xmlToJson(text, schema) ?? text;
   }
   try {
     return JSON.parse(text);
@@ -83,12 +91,15 @@ function parseExpected(value) {
   }
 }
 
-function stringify(value) {
+function stringify(value, schema, xml) {
   if (value == null) {
     return "";
   }
   if (typeof value === "string") {
     return value;
+  }
+  if (xml) {
+    return jsonToXml(value, schema);
   }
   return JSON.stringify(value, null, 2);
 }

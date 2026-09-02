@@ -167,7 +167,7 @@ export default function LoadSpecPage() {
         )}
         {backend.status === "down" && (
           <>
-            Cannot reach the studio API at {API_DISPLAY}. Start testdata-generator-api on port 8083, then reload.
+            Cannot reach the studio API at {API_DISPLAY}. Start testdata-generator-api, then reload.
             {backend.error ? <div className="hint">{backend.error}</div> : null}
           </>
         )}

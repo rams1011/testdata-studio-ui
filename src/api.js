@@ -1,7 +1,9 @@
-const API_PROXY_TARGET = "http://localhost:8083";
+const API_PROXY_TARGET = String(
+  import.meta.env.API_PROXY_TARGET || import.meta.env.VITE_API_PROXY_TARGET || "http://localhost:8083"
+).replace(/\/$/, "");
 const API_BASE = String(import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
-export { API_BASE };
+export { API_BASE, API_PROXY_TARGET };
 export const API_DISPLAY = API_BASE || `${API_PROXY_TARGET}/api`;
 
 const inflightListeners = new Set();
@@ -68,7 +70,7 @@ async function request(path, options = {}) {
     try {
       response = await fetch(apiUrl(path), { ...options, headers });
     } catch {
-      throw new Error(`Cannot reach API at ${API_DISPLAY}. Start testdata-generator-api on port 8083.`);
+      throw new Error(`Cannot reach API at ${API_DISPLAY}. Start testdata-generator-api at ${API_PROXY_TARGET}.`);
     }
     if (response.status === 204) {
       return null;
@@ -106,7 +108,7 @@ async function download(path, payload) {
         body: JSON.stringify(payload)
       });
     } catch {
-      throw new Error(`Cannot reach API at ${API_DISPLAY}. Start testdata-generator-api on port 8083.`);
+      throw new Error(`Cannot reach API at ${API_DISPLAY}. Start testdata-generator-api at ${API_PROXY_TARGET}.`);
     }
 
     if (!response.ok) {

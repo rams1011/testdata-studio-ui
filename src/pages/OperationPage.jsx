@@ -10,6 +10,7 @@ import Collapsible from "../components/Collapsible";
 import StatusCodeField from "../components/StatusCodeField";
 import { useToast } from "../components/Toast";
 import { hasResponseBodySchema, sampleFromSchema } from "../schema";
+import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { generateToast } from "./CasesPage";
 import { lastOpKey } from "./StudioLayout";
@@ -56,8 +57,14 @@ export default function OperationPage() {
       setOperation(nextOperation);
       setCases(nextCases);
       const nextForm = existing ? formFromCase(existing) : formFromOperation(nextOperation, spec);
-      const nextBody = existing?.requestBody
-        ?? sampleFromSchema(nextOperation.requestBody?.jsonSchema, "", { emptyArrays: true });
+      nextForm.contentType = matchedContentType(nextForm.contentType, nextOperation.requestContentTypes)
+        || nextForm.contentType;
+      const nextBody = decodeRequestBody(
+        existing?.requestBody
+          ?? sampleFromSchema(nextOperation.requestBody?.jsonSchema, "", { emptyArrays: true }),
+        nextOperation.requestBody?.jsonSchema,
+        nextForm.contentType
+      );
       setForm(nextForm);
       setRequestBody(nextBody);
       setRunResult(null);
@@ -327,23 +334,24 @@ export default function OperationPage() {
               />
               <Field label="Max response ms" type="number" value={form.maxResponseTimeMs} onChange={(maxResponseTimeMs) => setForm({ ...form, maxResponseTimeMs })} />
             </div>
-            <Field
-              label="Content type"
-              hint="Leave blank if none"
-              value={blankNa(form.contentType)}
-              onChange={(contentType) => setForm({ ...form, contentType })}
-            />
-            {(operation.requestContentTypes || []).length > 1 ? (
+            {(operation.requestContentTypes || []).length > 0 ? (
               <SelectField
-                label="Spec content types"
-                value={form.contentType}
+                label="Content type"
+                value={matchedContentType(form.contentType, operation.requestContentTypes)}
                 options={operation.requestContentTypes.map((item) => ({
-                  value: mappedContentType(item),
+                  value: item,
                   label: item
                 }))}
                 onChange={(contentType) => setForm({ ...form, contentType })}
               />
-            ) : null}
+            ) : (
+              <Field
+                label="Content type"
+                hint="Leave blank if none"
+                value={blankNa(form.contentType)}
+                onChange={(contentType) => setForm({ ...form, contentType })}
+              />
+            )}
           </div>
 
           {operation.parameters?.length ? (
@@ -367,6 +375,7 @@ export default function OperationPage() {
                 schema={operation.requestBody.jsonSchema}
                 value={requestBody}
                 onChange={setRequestBody}
+                contentType={form.contentType}
               />
             ) : (
               <div className="empty">This operation has no request body.</div>
@@ -382,9 +391,12 @@ export default function OperationPage() {
               sample={hasResponseBodySchema(operation.response) ? operation.response.sample : null}
               value={form.expectedResponse}
               onChange={(expectedResponse) => setForm((current) => ({ ...current, expectedResponse }))}
+              contentType={operation.response?.contentType || form.contentType}
               onBuilt={() => setForm((current) => ({
                 ...current,
-                responseType: current.responseType === "NONE" ? "JSON" : current.responseType
+                responseType: current.responseType === "NONE"
+                  ? (isXmlContentType(operation.response?.contentType) ? "STRING" : "JSON")
+                  : current.responseType
               }))}
             />
           </div>
@@ -437,6 +449,13 @@ export default function OperationPage() {
 
 function snapshot(form, requestBody) {
   return JSON.stringify({ form, requestBody });
+}
+
+function decodeRequestBody(body, schema, contentType) {
+  if (isXmlContentType(contentType) && looksLikeXml(body)) {
+    return xmlToJson(body, schema) ?? body;
+  }
+  return body;
 }
 
 function blankNa(value) {
@@ -627,7 +646,17 @@ function mappedContentType(mediaType) {
   if (value.includes("json")) return "JSON";
   if (value.includes("multipart")) return "MULTIPART";
   if (value.includes("urlencoded")) return "FORM";
-  if (value.includes("xml")) return "XML";
+  if (isXmlContentType(mediaType)) return "XML";
   if (value.startsWith("text/")) return "TEXT";
   return mediaType;
+}
+
+function matchedContentType(current, types) {
+  const list = types || [];
+  if (list.includes(current)) {
+    return current;
+  }
+  const mapped = mappedContentType(current);
+  const hit = list.find((item) => mappedContentType(item) === mapped || mappedContentType(item) === current);
+  return hit || current || "";
 }

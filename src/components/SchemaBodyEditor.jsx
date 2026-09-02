@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import SchemaForm from "./SchemaForm";
+import { jsonToXml, looksLikeXml, validateXml, xmlToJson } from "../xml";
 
 export default function SchemaBodyEditor({
   schema,
@@ -13,39 +14,64 @@ export default function SchemaBodyEditor({
   tabsAria = "Editor",
   onFillSample,
   extraActions,
-  emptyToNull = false
+  emptyToNull = false,
+  format = "json"
 }) {
-  const [mode, setMode] = useState("form");
+  const xml = format === "xml";
+  const [mode, setMode] = useState(xml ? "xml" : "form");
   const [filter, setFilter] = useState("");
   const [jsonText, setJsonText] = useState("");
+  const [xmlText, setXmlText] = useState("");
   const [jsonError, setJsonError] = useState("");
+  const [xmlError, setXmlError] = useState("");
+
+  const objectValue = useMemo(
+    () => asObject(value, schema, xml, emptyToNull),
+    [value, schema, xml, emptyToNull]
+  );
 
   useEffect(() => {
-    setMode("form");
+    setMode(xml ? "xml" : "form");
     setFilter("");
-    setJsonText(pretty(value, emptyToNull));
+    setJsonText(pretty(objectValue, emptyToNull));
+    setXmlText(xml ? jsonToXml(value ?? objectValue, schema) : "");
     setJsonError("");
-  }, [resetKey, emptyToNull]);
+    setXmlError("");
+  }, [resetKey, emptyToNull, xml]);
 
   useEffect(() => {
+    if (xml) {
+      if (mode !== "xml" || xmlError || looksLikeXml(value)) {
+        return;
+      }
+      const next = jsonToXml(objectValue, schema);
+      setXmlText((current) => (current === next ? current : next));
+      return;
+    }
     if (emptyToNull && value == null) {
       setJsonError("");
     }
     if (mode !== "json" || (jsonError && !(emptyToNull && value == null))) {
       return;
     }
-    const next = pretty(value, emptyToNull);
+    const next = pretty(objectValue, emptyToNull);
     setJsonText((current) => (current === next ? current : next));
-  }, [value, mode, jsonError, emptyToNull]);
+  }, [value, objectValue, schema, mode, jsonError, xmlError, emptyToNull, xml]);
 
   function showForm() {
     setMode("form");
   }
 
   function showJson() {
-    setJsonText(pretty(value, emptyToNull));
+    setJsonText(pretty(objectValue, emptyToNull));
     setJsonError("");
     setMode("json");
+  }
+
+  function showXml() {
+    setXmlText(jsonToXml(value ?? objectValue, schema));
+    setXmlError("");
+    setMode("xml");
   }
 
   function editJson(text) {
@@ -64,11 +90,33 @@ export default function SchemaBodyEditor({
     }
   }
 
+  function editXml(text) {
+    setXmlText(text);
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setXmlError("");
+      onChange(emptyToNull ? null : {});
+      return;
+    }
+    const error = validateXml(trimmed);
+    if (error) {
+      setXmlError("Invalid XML. The form still has the last valid body.");
+      return;
+    }
+    setXmlError("");
+    onChange(trimmed);
+  }
+
   function fillSample() {
     if (onFillSample) {
       onFillSample();
     }
     setJsonError("");
+    setXmlError("");
+  }
+
+  function changeForm(next) {
+    onChange(next);
   }
 
   return (
@@ -92,15 +140,27 @@ export default function SchemaBodyEditor({
           >
             Form
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "json"}
-            className={mode === "json" ? "active" : undefined}
-            onClick={showJson}
-          >
-            JSON
-          </button>
+          {xml ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "xml"}
+              className={mode === "xml" ? "active" : undefined}
+              onClick={showXml}
+            >
+              XML
+            </button>
+          ) : (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "json"}
+              className={mode === "json" ? "active" : undefined}
+              onClick={showJson}
+            >
+              JSON
+            </button>
+          )}
         </div>
         {onFillSample ? (
           <button type="button" className="btn" onClick={fillSample}>
@@ -110,7 +170,20 @@ export default function SchemaBodyEditor({
         {extraActions}
       </div>
       {mode === "form" ? (
-        <SchemaForm schema={schema} value={value} onChange={onChange} filter={filter} caseId={caseId} onEnsureCase={onEnsureCase} />
+        <SchemaForm schema={schema} value={objectValue} onChange={changeForm} filter={filter} caseId={caseId} onEnsureCase={onEnsureCase} />
+      ) : xml ? (
+        <>
+          {xmlError ? <div className="body-json-error">{xmlError}</div> : null}
+          <textarea
+            className="body-json"
+            value={xmlText}
+            onChange={(event) => editXml(event.target.value)}
+            spellCheck={false}
+            placeholder={emptyToNull ? "Leave blank if none" : undefined}
+            aria-invalid={Boolean(xmlError)}
+            aria-label={jsonAria}
+          />
+        </>
       ) : (
         <>
           {jsonError ? <div className="body-json-error">{jsonError}</div> : null}
@@ -127,6 +200,29 @@ export default function SchemaBodyEditor({
       )}
     </div>
   );
+}
+
+function asObject(value, schema, xml, emptyToNull) {
+  if (emptyToNull && value == null) {
+    return null;
+  }
+  if (value == null) {
+    return {};
+  }
+  if (typeof value === "object") {
+    return value;
+  }
+  if (xml && looksLikeXml(value)) {
+    return xmlToJson(value, schema) ?? {};
+  }
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }
 
 function pretty(value, emptyToNull) {
