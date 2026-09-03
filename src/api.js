@@ -272,6 +272,29 @@ export const Api = {
     return request("/api/testdata/run-plan", { method: "POST", body: JSON.stringify(payload) });
   },
 
+  listRuns({ specId, planId, caseId, outcome, trigger, limit } = {}) {
+    const query = new URLSearchParams();
+    if (specId) query.set("specId", specId);
+    if (planId) query.set("planId", planId);
+    if (caseId) query.set("caseId", caseId);
+    if (outcome) query.set("outcome", outcome);
+    if (trigger) query.set("trigger", trigger);
+    if (limit) query.set("limit", String(limit));
+    return request(`/api/runs?${query.toString()}`);
+  },
+
+  getRun(runId) {
+    return request(`/api/runs/${encodeURIComponent(runId)}`);
+  },
+
+  getRunResult(runId, resultId) {
+    return request(`/api/runs/${encodeURIComponent(runId)}/results/${encodeURIComponent(resultId)}`);
+  },
+
+  deleteRun(runId) {
+    return request(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+  },
+
   uploadRequestFile(caseId, file) {
     const data = new FormData();
     data.append("file", file);

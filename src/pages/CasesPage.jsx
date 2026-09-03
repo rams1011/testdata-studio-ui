@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
 import AuthSettings, { useSpecAuth } from "../components/AuthSettings";
+import LastRunsStrip from "../components/LastRunsStrip";
 import RunResultPanel, { resultBadge } from "../components/RunResultPanel";
 import { useToast } from "../components/Toast";
 
@@ -23,6 +24,7 @@ export default function CasesPage() {
   const [methodFilter, setMethodFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [selected, setSelected] = useState({});
+  const [historyKey, setHistoryKey] = useState(0);
 
   useEffect(() => {
     if (!planId) return;
@@ -113,6 +115,7 @@ export default function CasesPage() {
     try {
       const result = await Api.runCase(id, auth);
       remember(result);
+      setHistoryKey((value) => value + 1);
       toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
     } catch (error) {
       toast(error.message, true);
@@ -138,6 +141,7 @@ export default function CasesPage() {
       const message = result.allPassed
         ? `All ${result.passed} passed`
         : `${result.passed} passed, ${result.failed} failed${result.skipped ? `, ${result.skipped} skipped` : ""}`;
+      setHistoryKey((value) => value + 1);
       toast(message, !result.allPassed);
     } catch (error) {
       toast(error.message, true);
@@ -215,6 +219,7 @@ export default function CasesPage() {
         </div>
       </div>
       <AuthSettings auth={auth} onChange={setAuth} />
+      <LastRunsStrip specId={specId} planId={planId} refreshKey={historyKey} />
       {authCue ? (
         <div className="status-banner down" style={{ marginTop: 16 }}>
           API returned 401. Add run authentication if this endpoint needs login.

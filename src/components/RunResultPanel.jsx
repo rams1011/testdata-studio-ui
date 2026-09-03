@@ -61,28 +61,54 @@ function HoverJson({ value }) {
   );
 }
 
-export function resultBadge(result) {
+export function runOutcome(result) {
   if (!result) {
-    return null;
+    return "";
+  }
+  if (result.outcome) {
+    return result.outcome;
   }
   if (result.skipped) {
-    return <span className="run-badge skip">Skipped</span>;
+    return "skipped";
   }
-  return result.passed
-    ? <span className="run-badge pass">Passed</span>
-    : <span className="run-badge fail">Failed</span>;
+  if (result.passed) {
+    return "passed";
+  }
+  if (result.error) {
+    return "error";
+  }
+  return "failed";
 }
 
-export default function RunResultPanel({ result }) {
+export function resultBadge(result) {
+  const outcome = runOutcome(result);
+  if (!outcome) {
+    return null;
+  }
+  if (outcome === "skipped") {
+    return <span className="run-badge skip">Skipped</span>;
+  }
+  if (outcome === "passed") {
+    return <span className="run-badge pass">Passed</span>;
+  }
+  if (outcome === "error") {
+    return <span className="run-badge fail">Error</span>;
+  }
+  return <span className="run-badge fail">Failed</span>;
+}
+
+export default function RunResultPanel({ result, title = "Run result" }) {
   if (!result) {
     return null;
   }
-  const state = result.skipped ? "skip" : result.passed ? "pass" : "fail";
+  const outcome = runOutcome(result);
+  const state = outcome === "skipped" ? "skip" : outcome === "passed" ? "pass" : "fail";
   const body = prettyBody(result.responseBody);
+  const requestBody = prettyBody(result.requestBody);
   return (
     <div className={`card run-result ${state}`}>
       <div className="array-toolbar" style={{ marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>Run result</h3>
+        <h3 style={{ margin: 0 }}>{result.testName || title}</h3>
         {resultBadge(result)}
       </div>
       {result.skipReason ? <p className="hint">{result.skipReason}</p> : null}
@@ -93,6 +119,16 @@ export default function RunResultPanel({ result }) {
         {result.actualStatus ? ` · HTTP ${result.actualStatus}` : ""}
         {result.downloadPath ? ` · saved ${result.downloadPath}` : ""}
       </div>
+      {requestBody || (result.requestParams && Object.keys(result.requestParams).length) ? (
+        <>
+          <h3 style={{ marginTop: 16 }}>Request</h3>
+          {result.requestContentType ? <div className="hint">{result.requestContentType}</div> : null}
+          {result.requestParams && Object.keys(result.requestParams).length ? (
+            <pre className="json-preview">{JSON.stringify(result.requestParams, null, 2)}</pre>
+          ) : null}
+          {requestBody ? <pre className="json-preview">{requestBody}</pre> : null}
+        </>
+      ) : null}
       {result.assertions?.length ? (
         <table className="table run-assert-table">
           <thead>

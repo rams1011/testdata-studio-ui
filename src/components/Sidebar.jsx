@@ -103,6 +103,9 @@ export default function Sidebar({
           Cases
           {totalCases ? <span className="case-count">{totalCases}</span> : null}
         </NavLink>
+        <NavLink to={`/s/${specId}/history`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+          History
+        </NavLink>
         <NavLink to={`/s/${specId}/export`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
           Export Excel
         </NavLink>

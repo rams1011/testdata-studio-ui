@@ -35,6 +35,7 @@ Open [http://localhost:5173](http://localhost:5173). The home page checks `GET /
 | Generate positive / negative cases | `POST /api/testdata/generate` |
 | Generate Smoke / Negative plans | `POST /api/testdata/generate-plans` |
 | Export Excel | `POST /api/testdata/export` |
+| History | `GET` `DELETE /api/runs` |
 
 Point the Vite `/api` proxy at another host by changing `API_PROXY_TARGET` in the matching env file (or `.env.development.local` / `.env.production.local` for a machine-only override), then restart Vite.
 

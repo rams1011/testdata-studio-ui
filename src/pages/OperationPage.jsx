@@ -5,6 +5,7 @@ import RequestBodyEditor from "../components/RequestBodyEditor";
 import JsonPathAssertionsPicker from "../components/JsonPathAssertionsPicker";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
 import AuthSettings, { emptyAuth, useSpecAuth } from "../components/AuthSettings";
+import LastRunsStrip from "../components/LastRunsStrip";
 import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
 import StatusCodeField from "../components/StatusCodeField";
@@ -28,6 +29,7 @@ export default function OperationPage() {
   const [auth, setAuth] = useSpecAuth(specId);
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(null);
+  const [historyKey, setHistoryKey] = useState(0);
   const baseline = useRef("");
   const skipUnsavedPrompt = useRef(false);
   const [, setCleanNonce] = useState(0);
@@ -193,6 +195,7 @@ export default function OperationPage() {
     try {
       const result = await Api.runDraft({ testCase: casePayload(), auth });
       setRunResult(result);
+      setHistoryKey((value) => value + 1);
       toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
     } catch (error) {
       toast(error.message, true);
@@ -206,6 +209,7 @@ export default function OperationPage() {
     try {
       const result = await Api.runCase(id, auth);
       setRunResult(result);
+      setHistoryKey((value) => value + 1);
       toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
     } catch (error) {
       toast(error.message, true);
@@ -255,6 +259,11 @@ export default function OperationPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [form, operation, caseId]);
 
+  const tryRequestBlockers = useMemo(
+    () => (form && operation ? draftRunBlockers(form, operation) : ["Form is still loading"]),
+    [form, operation]
+  );
+
   if (!operation || !form) {
     return <div className="empty">Loading operation schema…</div>;
   }
@@ -280,9 +289,6 @@ export default function OperationPage() {
           </button>
           <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
             New case
-          </button>
-          <button type="button" className="btn" onClick={runCurrent} disabled={!!running}>
-            {running === "current" ? "Running…" : "Run"}
           </button>
           <button type="button" className="btn primary" onClick={save}>
             {boundCaseId ? "Update" : "Save"}
@@ -409,9 +415,32 @@ export default function OperationPage() {
               onChange={(jsonPathAssertions) => setForm((current) => ({ ...current, jsonPathAssertions }))}
             />
           </Collapsible>
+
+          <div className="try-request">
+            <button
+              type="button"
+              className="btn"
+              onClick={runCurrent}
+              disabled={!!running || tryRequestBlockers.length > 0}
+              title={tryRequestBlockers[0] || "Send the current form without saving"}
+            >
+              {running === "current" ? "Trying…" : "Try this request"}
+            </button>
+            <p className="hint">
+              {tryRequestBlockers.length
+                ? tryRequestBlockers.join(". ") + "."
+                : "Sends the form as-is. It does not save the case."}
+            </p>
+          </div>
         </div>
 
         <div>
+          <LastRunsStrip
+            specId={specId}
+            planId={planId}
+            caseId={boundCaseId || undefined}
+            refreshKey={historyKey}
+          />
           <RunResultPanel result={runResult} />
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Saved for this operation</h3>
@@ -445,6 +474,21 @@ export default function OperationPage() {
       </div>
     </div>
   );
+}
+
+function draftRunBlockers(form, operation) {
+  const reasons = [];
+  if (!String(form.baseUrl || "").trim()) {
+    reasons.push("Set a base URL before trying the request");
+  }
+  const missingPath = (operation.parameters || [])
+    .filter((parameter) => parameter.in === "path")
+    .filter((parameter) => !String(form.pathParams?.[parameter.name] || "").trim())
+    .map((parameter) => parameter.name);
+  if (missingPath.length) {
+    reasons.push(`Fill required path params: ${missingPath.join(", ")}`);
+  }
+  return reasons;
 }
 
 function snapshot(form, requestBody) {
