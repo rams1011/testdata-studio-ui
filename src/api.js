@@ -295,6 +295,15 @@ export const Api = {
     return request(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
   },
 
+  compareRuns({ leftRunId, leftResultId, rightRunId, rightResultId } = {}) {
+    const query = new URLSearchParams();
+    if (leftRunId) query.set("leftRunId", leftRunId);
+    if (leftResultId) query.set("leftResultId", leftResultId);
+    if (rightRunId) query.set("rightRunId", rightRunId);
+    if (rightResultId) query.set("rightResultId", rightResultId);
+    return request(`/api/runs/compare?${query.toString()}`);
+  },
+
   uploadRequestFile(caseId, file) {
     const data = new FormData();
     data.append("file", file);

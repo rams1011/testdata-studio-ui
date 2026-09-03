@@ -58,3 +58,66 @@ export function pickHistoryResult(run, resultId) {
     || results[0]
     || null;
 }
+
+export function snapshotLabel(result) {
+  if (!result) {
+    return "";
+  }
+  const name = result.testName || result.operationKey || result.method || "Snapshot";
+  const when = formatRunTime(result.createdAt);
+  return when ? `${name} · ${when}` : name;
+}
+
+export function sameSnapshot(left, right) {
+  return Boolean(left && right && left.runId === right.runId && left.resultId === right.resultId);
+}
+
+export function compareSlot(result) {
+  if (!result?.runId || !result?.resultId) {
+    return null;
+  }
+  return {
+    runId: result.runId,
+    resultId: result.resultId,
+    label: snapshotLabel(result)
+  };
+}
+
+export const COMPARE_BODY_FIELDS = new Set(["requestParams", "requestBody", "responseBody", "assertions"]);
+
+const COMPARE_FIELD_LABELS = {
+  outcome: "Outcome",
+  testName: "Test name",
+  operationKey: "Operation",
+  caseId: "Case id",
+  method: "Method",
+  url: "URL",
+  expectedStatus: "Expected status",
+  actualStatus: "Actual status",
+  statusMatched: "Status matched",
+  elapsedMs: "Elapsed ms",
+  timedOut: "Timed out",
+  error: "Error",
+  requestContentType: "Request content type",
+  requestParams: "Request params",
+  requestBody: "Request body",
+  responseBody: "Response body",
+  assertions: "Assertions",
+  downloadPath: "Download path"
+};
+
+export function compareFieldLabel(field) {
+  return COMPARE_FIELD_LABELS[field] || field;
+}
+
+export function prettyJson(value) {
+  if (value == null || value === "") {
+    return "";
+  }
+  const text = String(value);
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
