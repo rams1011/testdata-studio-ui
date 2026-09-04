@@ -96,6 +96,15 @@ export default function StudioLayout() {
     return next || [];
   }
 
+  async function handleSpecUpdated(updated) {
+    setSpec(updated);
+    try {
+      await reloadCases();
+    } catch {
+      // Case list refresh is best-effort after a spec rename or base URL change.
+    }
+  }
+
   async function reloadSpec(file) {
     const result = file
       ? await Api.reloadSpecUpload(specId, file, spec?.baseUrl)
@@ -158,7 +167,7 @@ export default function StudioLayout() {
             onSelectPlan={selectPlan}
             onPlansChange={reloadPlans}
             onReloadSpec={reloadSpec}
-            onSpecRenamed={setSpec}
+            onSpecRenamed={handleSpecUpdated}
           />
         ) : null}
         <main className="main">

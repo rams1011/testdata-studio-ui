@@ -323,6 +323,9 @@ a { color: inherit; text-decoration: none; }
 .workspace-bar .spec-label-edit {
     max-width: 420px;
 }
+.workspace-bar .spec-label-edit .field {
+    margin-bottom: 8px;
+}
 
 .topbar {
     display: flex;
@@ -1045,14 +1048,20 @@ a { color: inherit; text-decoration: none; }
     justify-content: flex-end;
     align-items: center;
 }
-.compare-tray {
+.history-row-picked { background: #f3f7f3; }
+.compare-bar {
     display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
+    justify-content: space-between;
     align-items: center;
+    gap: 12px;
 }
-.compare-tray .compare-slot {
-    flex: 1 1 220px;
+.compare-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    color: var(--muted);
+    font-size: 12px;
 }
 .compare-slot {
     display: grid;

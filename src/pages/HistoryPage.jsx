@@ -14,6 +14,12 @@ import {
   triggerLabel
 } from "../runHistory";
 
+function byTime(left, right) {
+  const leftTime = Date.parse(left?.createdAt || "") || 0;
+  const rightTime = Date.parse(right?.createdAt || "") || 0;
+  return leftTime <= rightTime ? [left, right] : [right, left];
+}
+
 export default function HistoryPage() {
   const { specId } = useParams();
   const { plans } = useOutletContext();
@@ -24,8 +30,7 @@ export default function HistoryPage() {
   const [selectedResultId, setSelectedResultId] = useState("");
   const [loading, setLoading] = useState(false);
   const [maxPerSpec, setMaxPerSpec] = useState("");
-  const [leftSlot, setLeftSlot] = useState(null);
-  const [rightSlot, setRightSlot] = useState(null);
+  const [picks, setPicks] = useState([]);
   const [compare, setCompare] = useState(null);
   const [planFilter, setPlanFilter] = useState(() => searchParams.get("planId") || "");
   const [caseFilter, setCaseFilter] = useState(() => searchParams.get("caseId") || "");
@@ -33,6 +38,7 @@ export default function HistoryPage() {
   const [trigger, setTrigger] = useState(() => searchParams.get("trigger") || "");
 
   const selectedRunId = searchParams.get("runId") || "";
+  const selectedResultParam = searchParams.get("resultId") || "";
 
   useEffect(() => {
     Api.config()
@@ -88,8 +94,7 @@ export default function HistoryPage() {
           return;
         }
         setDetail(run);
-        const preferred = searchParams.get("resultId");
-        const picked = pickHistoryResult(run, preferred);
+        const picked = pickHistoryResult(run, selectedResultParam);
         setSelectedResultId(picked?.resultId || "");
       })
       .catch((error) => {
@@ -101,23 +106,24 @@ export default function HistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedRunId, searchParams, toast]);
+  }, [selectedRunId, toast]);
 
   useEffect(() => {
-    if (!leftSlot || !rightSlot) {
+    if (picks.length !== 2) {
       setCompare(null);
       return;
     }
-    if (sameSnapshot(leftSlot, rightSlot)) {
+    if (sameSnapshot(picks[0], picks[1])) {
       setCompare(null);
       return;
     }
+    const [older, newer] = byTime(picks[0], picks[1]);
     let cancelled = false;
     Api.compareRuns({
-      leftRunId: leftSlot.runId,
-      leftResultId: leftSlot.resultId,
-      rightRunId: rightSlot.runId,
-      rightResultId: rightSlot.resultId
+      leftRunId: older.runId,
+      leftResultId: older.resultId,
+      rightRunId: newer.runId,
+      rightResultId: newer.resultId
     })
       .then((next) => {
         if (!cancelled) {
@@ -133,12 +139,24 @@ export default function HistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [leftSlot, rightSlot, toast]);
+  }, [picks, toast]);
 
   const selectedResult = useMemo(
     () => pickHistoryResult(detail, selectedResultId),
     [detail, selectedResultId]
   );
+
+  function clearOpenedRun() {
+    setDetail(null);
+    setSelectedResultId("");
+    if (!searchParams.get("runId") && !searchParams.get("resultId")) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("runId");
+    next.delete("resultId");
+    setSearchParams(next, { replace: true });
+  }
 
   function openRun(runId) {
     const next = new URLSearchParams(searchParams);
@@ -157,43 +175,62 @@ export default function HistoryPage() {
     setSearchParams(next);
   }
 
-  function assignSlot(side, result) {
-    const slot = compareSlot(result);
-    if (!slot) {
-      toast("Open a snapshot first", true);
-      return;
-    }
-    if (side === "left") {
-      if (sameSnapshot(slot, rightSlot)) {
-        toast("Pick two different snapshots", true);
-        return;
-      }
-      setLeftSlot(slot);
-      return;
-    }
-    if (sameSnapshot(slot, leftSlot)) {
-      toast("Pick two different snapshots", true);
-      return;
-    }
-    setRightSlot(slot);
+  function runIsPicked(runId) {
+    return picks.some((pick) => pick.runId === runId);
   }
 
-  async function assignRun(side, runId) {
+  function resultIsPicked(result) {
+    return picks.some((pick) => sameSnapshot(pick, compareSlot(result)));
+  }
+
+  async function toggleRunPick(runId) {
+    if (runIsPicked(runId)) {
+      setPicks((current) => current.filter((pick) => pick.runId !== runId));
+      return;
+    }
+    if (picks.length >= 2) {
+      toast("Uncheck one snapshot first", true);
+      return;
+    }
     try {
       const run = detail?.runId === runId ? detail : await Api.getRun(runId);
       const result = pickHistoryResult(run, runId === selectedRunId ? selectedResultId : undefined);
-      assignSlot(side, result);
-      if (runId !== selectedRunId) {
-        openRun(runId);
+      const slot = compareSlot(result);
+      if (!slot) {
+        toast("That run has no snapshot to compare", true);
+        return;
       }
+      setPicks((current) => [...current, slot]);
     } catch (error) {
       toast(error.message, true);
     }
   }
 
+  function toggleResultPick(result) {
+    const slot = compareSlot(result);
+    if (!slot) {
+      return;
+    }
+    setPicks((current) => {
+      if (current.some((pick) => sameSnapshot(pick, slot))) {
+        return current.filter((pick) => !sameSnapshot(pick, slot));
+      }
+      const sameRun = current.findIndex((pick) => pick.runId === slot.runId);
+      if (sameRun >= 0) {
+        const next = [...current];
+        next[sameRun] = slot;
+        return next;
+      }
+      if (current.length >= 2) {
+        toast("Uncheck one snapshot first", true);
+        return current;
+      }
+      return [...current, slot];
+    });
+  }
+
   function clearCompare() {
-    setLeftSlot(null);
-    setRightSlot(null);
+    setPicks([]);
     setCompare(null);
   }
 
@@ -204,18 +241,13 @@ export default function HistoryPage() {
     try {
       await Api.deleteRun(runId);
       setRuns((current) => current.filter((run) => run.runId !== runId));
+      setPicks((current) => current.filter((pick) => pick.runId !== runId));
       if (selectedRunId === runId) {
         const next = new URLSearchParams(searchParams);
         next.delete("runId");
         next.delete("resultId");
         setSearchParams(next);
         setDetail(null);
-      }
-      if (leftSlot?.runId === runId) {
-        setLeftSlot(null);
-      }
-      if (rightSlot?.runId === runId) {
-        setRightSlot(null);
       }
       toast("Run deleted");
     } catch (error) {
@@ -234,41 +266,52 @@ export default function HistoryPage() {
           <h2>History</h2>
           <p className="hint" style={{ marginTop: 6 }}>
             Snapshots from Try, Run, and Run plan. Bodies stay even after you edit the case.
-            {pruneHint} Use Left and Right on two rows to compare them.
+            {pruneHint} Tick two runs to compare what changed.
           </p>
         </div>
       </div>
 
-      <div className="card compare-tray" style={{ marginTop: 16 }}>
-        <div className="compare-slot">
-          <span className="hint">Left snapshot</span>
-          <strong>{leftSlot?.label || "Click Left on a run"}</strong>
+      {picks.length ? (
+        <div className="card compare-bar" style={{ marginTop: 16 }}>
+          <div>
+            <strong>
+              {picks.length === 1 ? "1 snapshot selected" : "Comparing 2 snapshots"}
+            </strong>
+            <p className="hint" style={{ margin: "4px 0 0" }}>
+              {picks.length === 1
+                ? "Tick one more run. Failed results are chosen first for plan runs."
+                : picks.map((pick) => pick.label).join("  →  ")}
+            </p>
+          </div>
+          <button type="button" className="btn" onClick={clearCompare}>Clear</button>
         </div>
-        <div className="compare-slot">
-          <span className="hint">Right snapshot</span>
-          <strong>{rightSlot?.label || "Click Right on another run"}</strong>
-        </div>
-        <button type="button" className="btn" disabled={!leftSlot && !rightSlot} onClick={clearCompare}>
-          Clear compare
-        </button>
-      </div>
+      ) : null}
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="fill-bar">
-          <select value={planFilter} onChange={(event) => setPlanFilter(event.target.value)}>
+          <select value={planFilter} onChange={(event) => {
+            clearOpenedRun();
+            setPlanFilter(event.target.value);
+          }}>
             <option value="">All plans</option>
             {(plans || []).map((plan) => (
               <option key={plan.id} value={plan.id}>{plan.name}</option>
             ))}
           </select>
-          <select value={outcome} onChange={(event) => setOutcome(event.target.value)}>
+          <select value={outcome} onChange={(event) => {
+            clearOpenedRun();
+            setOutcome(event.target.value);
+          }}>
             <option value="">All outcomes</option>
             <option value="failed">Failed</option>
             <option value="passed">Passed</option>
             <option value="error">Error</option>
             <option value="skipped">Skipped</option>
           </select>
-          <select value={trigger} onChange={(event) => setTrigger(event.target.value)}>
+          <select value={trigger} onChange={(event) => {
+            clearOpenedRun();
+            setTrigger(event.target.value);
+          }}>
             <option value="">All triggers</option>
             <option value="try">Try</option>
             <option value="case">Case</option>
@@ -279,7 +322,10 @@ export default function HistoryPage() {
             className="inline-search"
             placeholder="Filter by case id"
             value={caseFilter}
-            onChange={(event) => setCaseFilter(event.target.value.trim())}
+            onChange={(event) => {
+              clearOpenedRun();
+              setCaseFilter(event.target.value.trim());
+            }}
           />
         </div>
         {loading ? <div className="empty">Loading history…</div> : null}
@@ -292,17 +338,29 @@ export default function HistoryPage() {
           <table className="table">
             <thead>
               <tr>
-                {["When", "Trigger", "Results", "Plan", "Compare", ""].map((text) => <th key={text}>{text}</th>)}
+                <th aria-label="Compare" />
+                {["When", "Trigger", "Results", "Plan", ""].map((text) => <th key={text}>{text}</th>)}
               </tr>
             </thead>
             <tbody>
               {runs.map((run) => (
                 <tr
                   key={run.runId}
-                  className={run.runId === selectedRunId ? "history-row-active" : ""}
+                  className={[
+                    run.runId === selectedRunId ? "history-row-active" : "",
+                    runIsPicked(run.runId) ? "history-row-picked" : ""
+                  ].filter(Boolean).join(" ")}
                   style={{ cursor: "pointer" }}
                   onClick={() => openRun(run.runId)}
                 >
+                  <td onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={runIsPicked(run.runId)}
+                      aria-label={`Compare ${triggerLabel(run.trigger)} ${formatRunTime(run.startedAt)}`}
+                      onChange={() => toggleRunPick(run.runId)}
+                    />
+                  </td>
                   <td>{formatRunTime(run.startedAt)}</td>
                   <td>{triggerLabel(run.trigger)}</td>
                   <td>
@@ -311,12 +369,6 @@ export default function HistoryPage() {
                     </span>
                   </td>
                   <td>{(plans || []).find((plan) => plan.id === run.planId)?.name || run.planId || "—"}</td>
-                  <td onClick={(event) => event.stopPropagation()}>
-                    <div className="history-row-actions">
-                      <button type="button" className="btn" onClick={() => assignRun("left", run.runId)}>Left</button>
-                      <button type="button" className="btn" onClick={() => assignRun("right", run.runId)}>Right</button>
-                    </div>
-                  </td>
                   <td onClick={(event) => event.stopPropagation()}>
                     <button type="button" className="btn danger" onClick={() => removeRun(run.runId)}>
                       Delete
@@ -336,28 +388,24 @@ export default function HistoryPage() {
               <h3 style={{ margin: 0 }}>{triggerLabel(detail.trigger)} · {formatRunTime(detail.startedAt)}</h3>
               <p className="hint" style={{ margin: "6px 0 0" }}>{runCounts(detail)}</p>
             </div>
-            <div className="history-row-actions">
-              <button type="button" className="btn" disabled={!selectedResult} onClick={() => assignSlot("left", selectedResult)}>
-                Left
-              </button>
-              <button type="button" className="btn" disabled={!selectedResult} onClick={() => assignSlot("right", selectedResult)}>
-                Right
-              </button>
-              <button type="button" className="btn danger" onClick={() => removeRun(detail.runId)}>Delete run</button>
-            </div>
+            <button type="button" className="btn danger" onClick={() => removeRun(detail.runId)}>Delete run</button>
           </div>
           {(detail.results || []).length > 1 ? (
             <div className="history-results">
               {detail.results.map((item) => (
                 <div key={item.resultId} className={`history-result ${item.resultId === selectedResultId ? "active" : ""}`}>
+                  <label className="compare-check">
+                    <input
+                      type="checkbox"
+                      checked={resultIsPicked(item)}
+                      onChange={() => toggleResultPick(item)}
+                    />
+                    <span className="hint">Compare</span>
+                  </label>
                   <button type="button" className="history-result-main" onClick={() => openResult(item.resultId)}>
                     <strong>{item.testName || item.operationKey || item.method}</strong>
                     <span className="hint">{item.outcome}{item.actualStatus ? ` · HTTP ${item.actualStatus}` : ""}</span>
                   </button>
-                  <div className="history-row-actions">
-                    <button type="button" className="btn" onClick={() => assignSlot("left", item)}>Left</button>
-                    <button type="button" className="btn" onClick={() => assignSlot("right", item)}>Right</button>
-                  </div>
                 </div>
               ))}
             </div>

@@ -57,6 +57,11 @@ export default function CasesPage() {
 
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
 
+  useEffect(() => {
+    setSelectedResult(null);
+    setPlanSummary(null);
+  }, [filter, methodFilter, statusFilter]);
+
   async function refresh() {
     const next = await Api.listCases(specId, undefined, planId);
     setCases(next);

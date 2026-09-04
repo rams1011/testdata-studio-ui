@@ -79,7 +79,8 @@ export function compareSlot(result) {
   return {
     runId: result.runId,
     resultId: result.resultId,
-    label: snapshotLabel(result)
+    label: snapshotLabel(result),
+    createdAt: result.createdAt || null
   };
 }
 

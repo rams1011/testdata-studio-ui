@@ -26,14 +26,18 @@ export default function WorkspaceBar({
   const [specLabelValue, setSpecLabelValue] = useState(specLabel(spec));
   const [labelCatalog, setLabelCatalog] = useState([]);
   const [editingLabel, setEditingLabel] = useState(false);
+  const [editingBaseUrl, setEditingBaseUrl] = useState(false);
+  const [specBaseUrl, setSpecBaseUrl] = useState(spec.baseUrl || "");
 
   useEffect(() => {
     setSpecName(spec.name || "");
     setSpecLabelValue(specLabel(spec));
+    setSpecBaseUrl(spec.baseUrl || "");
     setRenaming(false);
     setRenameFocus(false);
     setEditingLabel(false);
-  }, [spec.specId, spec.name, spec.title, spec.label]);
+    setEditingBaseUrl(false);
+  }, [spec.specId, spec.name, spec.title, spec.label, spec.baseUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +82,21 @@ export default function WorkspaceBar({
       setLabelCatalog((current) => uniqueLabels([...current.map((item) => ({ label: item })), updated]));
       setEditingLabel(false);
       toast("Label saved");
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function saveSpecBaseUrl() {
+    try {
+      const updated = await Api.renameSpec(specId, {
+        name: spec.name || specName,
+        baseUrl: specBaseUrl.trim()
+      });
+      onSpecRenamed?.(updated);
+      setSpecBaseUrl(updated.baseUrl || "");
+      setEditingBaseUrl(false);
+      toast("Base URL saved");
     } catch (error) {
       toast(error.message, true);
     }
@@ -216,10 +235,55 @@ export default function WorkspaceBar({
               Change
             </button>
             <span>
-              {spec.operationCount} operations{spec.baseUrl ? ` · ${spec.baseUrl}` : ""}
+              {spec.operationCount} operations
             </span>
+            <span>Base URL · {spec.baseUrl || "not set"}</span>
+            <button type="button" className="linkish" onClick={() => setEditingBaseUrl(true)}>
+              Change
+            </button>
           </div>
         )}
+        {editingBaseUrl ? (
+          <div className="spec-label-edit">
+            <div className="field">
+              <label htmlFor="workspace-spec-base-url">API base URL</label>
+              <input
+                id="workspace-spec-base-url"
+                value={specBaseUrl}
+                autoFocus
+                placeholder="e.g. http://localhost:8080"
+                onChange={(event) => setSpecBaseUrl(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    saveSpecBaseUrl();
+                  }
+                  if (event.key === "Escape") {
+                    setSpecBaseUrl(spec.baseUrl || "");
+                    setEditingBaseUrl(false);
+                  }
+                }}
+              />
+              <div className="hint">
+                Saved cases that still use the previous spec URL are updated. Cases with a custom URL are left as-is.
+                Leave blank to use the OpenAPI servers URL.
+              </div>
+            </div>
+            <div className="plan-add">
+              <button type="button" className="btn" onClick={saveSpecBaseUrl}>Save base URL</button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setSpecBaseUrl(spec.baseUrl || "");
+                  setEditingBaseUrl(false);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
       <div className="workspace-plan">
         <label htmlFor="plan-select">Test plan</label>

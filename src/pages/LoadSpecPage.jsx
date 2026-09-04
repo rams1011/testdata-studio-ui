@@ -13,7 +13,7 @@ export default function LoadSpecPage() {
   const [label, setLabel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [paste, setPaste] = useState("");
-  const [source, setSource] = useState("file");
+  const [source, setSource] = useState("url");
   const [query, setQuery] = useState("");
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -293,8 +293,8 @@ export default function LoadSpecPage() {
         </div>
         <div className="source-tabs" role="tablist">
           {[
-            ["file", "File"],
             ["url", "URL"],
+            ["file", "File"],
             ["paste", "Paste"]
           ].map(([id, label]) => (
             <button

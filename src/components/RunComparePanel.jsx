@@ -35,23 +35,23 @@ export default function RunComparePanel({ compare, onClear }) {
           </p>
         </div>
         {onClear ? (
-          <button type="button" className="btn ghost" onClick={onClear}>Clear compare</button>
+          <button type="button" className="btn" onClick={onClear}>Clear</button>
         ) : null}
       </div>
       <div className="compare-heads">
         <div>
-          <span className="hint">Left</span>
+          <span className="hint">Older</span>
           <strong>{snapshotLabel(compare.left)}</strong>
         </div>
         <div>
-          <span className="hint">Right</span>
+          <span className="hint">Newer</span>
           <strong>{snapshotLabel(compare.right)}</strong>
         </div>
       </div>
       <table className="table">
         <thead>
           <tr>
-            {["Field", "Left", "Right"].map((text) => <th key={text}>{text}</th>)}
+            {["Field", "Older", "Newer"].map((text) => <th key={text}>{text}</th>)}
           </tr>
         </thead>
         <tbody>
