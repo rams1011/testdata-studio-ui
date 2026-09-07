@@ -17,11 +17,15 @@ export default function LoadSpecPage() {
   const [query, setQuery] = useState("");
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [reloadingId, setReloadingId] = useState("");
   const [backend, setBackend] = useState({ status: "checking", specs: [] });
   const reloadFileRef = useRef(null);
   const reloadTargetRef = useRef(null);
+  const nameRef = useRef(null);
+  const addButtonRef = useRef(null);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +42,26 @@ export default function LoadSpecPage() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  loadingRef.current = loading;
+
+  useEffect(() => {
+    if (!adding) return undefined;
+    nameRef.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(event) {
+      if (event.key === "Escape" && !loadingRef.current) {
+        setAdding(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+      addButtonRef.current?.focus();
+    };
+  }, [adding]);
 
   const specs = (backend.specs || []).filter((spec) => {
     if (!query.trim()) return true;
@@ -176,24 +200,49 @@ export default function LoadSpecPage() {
         )}
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card home-specs">
         <div className="card-head">
           <h3>Your specs</h3>
-          {backend.specs.length ? (
-            <input
-              type="search"
-              className="inline-search"
-              placeholder="Search by name, label, or URL"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          ) : null}
+          <div className="card-head-actions">
+            {backend.specs.length ? (
+              <input
+                type="search"
+                className="inline-search"
+                placeholder="Search by name, label, or URL"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            ) : null}
+            <button
+              ref={addButtonRef}
+              type="button"
+              className="btn primary"
+              disabled={apiDown || backend.status === "checking"}
+              onClick={() => setAdding(true)}
+            >
+              Add spec
+            </button>
+          </div>
         </div>
         {!backend.specs.length ? (
           <div className="empty">
-            {backend.status === "checking"
-              ? "Looking for saved specs…"
-              : "Nothing loaded yet. Add a spec below — a unique name is all you need besides the OpenAPI file."}
+            {backend.status === "checking" ? (
+              "Looking for saved specs…"
+            ) : (
+              <>
+                Nothing loaded yet. Add a spec — a unique name is all you need besides the OpenAPI file.
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={apiDown}
+                    onClick={() => setAdding(true)}
+                  >
+                    Add spec
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ) : !specs.length ? (
           <div className="empty">No specs match “{query}”.</div>
@@ -265,99 +314,122 @@ export default function LoadSpecPage() {
         />
       </div>
 
-      <div className="card">
-        <h3>Add a spec</h3>
-        <div className="field">
-          <label>Name <span className="req">*</span></label>
-          <input
-            value={name}
-            autoComplete="off"
-            onChange={(event) => setName(event.target.value)}
-            placeholder="e.g. HRM local"
-          />
-          <div className="hint">Must be unique. This is your name for the spec — not the OpenAPI title.</div>
-        </div>
-        <LabelField
-          id="new-spec-label"
-          value={label}
-          onChange={setLabel}
-          suggestions={uniqueLabels(backend.specs)}
-        />
-        <div className="field">
-          <label>API base URL</label>
-          <input
-            value={baseUrl}
-            onChange={(event) => setBaseUrl(event.target.value)}
-            placeholder="Optional override, e.g. http://localhost:8080"
-          />
-        </div>
-        <div className="source-tabs" role="tablist">
-          {[
-            ["url", "URL"],
-            ["file", "File"],
-            ["paste", "Paste"]
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={source === id}
-              className={`source-tab ${source === id ? "active" : ""}`}
-              onClick={() => setSource(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {source === "url" ? (
-          <div className="field">
-            <label>Spec URL or local file path</label>
-            <input
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://petstore.swagger.io/v2/swagger.json"
-            />
-          </div>
-        ) : null}
-        {source === "paste" ? (
-          <div className="field">
-            <label>OpenAPI JSON or YAML</label>
-            <textarea
-              value={paste}
-              onChange={(event) => setPaste(event.target.value)}
-              placeholder="Paste the spec here"
-            />
-          </div>
-        ) : null}
-        {source === "file" ? (
+      {adding ? (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !loading) {
+              setAdding(false);
+            }
+          }}
+        >
           <div
-            className={`drop ${dragging ? "drag" : ""}`}
-            onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
-            onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-            onDragLeave={(event) => { event.preventDefault(); setDragging(false); }}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragging(false);
-              const file = event.dataTransfer.files[0];
-              if (file) upload(file);
-            }}
+            className="card modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-spec-title"
           >
-            <strong>Drop a Swagger or OpenAPI file</strong>
-            <div className="hint">JSON, YAML, or YML — or choose a file</div>
-            <input
-              type="file"
-              accept=".json,.yaml,.yml"
-              onChange={(event) => event.target.files[0] && upload(event.target.files[0])}
+            <div className="card-head">
+              <h3 id="add-spec-title">Add a spec</h3>
+              <button type="button" className="btn" disabled={loading} onClick={() => setAdding(false)}>
+                Cancel
+              </button>
+            </div>
+            <div className="field">
+              <label htmlFor="new-spec-name">Name <span className="req">*</span></label>
+              <input
+                id="new-spec-name"
+                ref={nameRef}
+                value={name}
+                autoComplete="off"
+                onChange={(event) => setName(event.target.value)}
+                placeholder="e.g. HRM local"
+              />
+              <div className="hint">Must be unique. This is your name for the spec — not the OpenAPI title.</div>
+            </div>
+            <LabelField
+              id="new-spec-label"
+              value={label}
+              onChange={setLabel}
+              suggestions={uniqueLabels(backend.specs)}
             />
+            <div className="field">
+              <label>API base URL</label>
+              <input
+                value={baseUrl}
+                onChange={(event) => setBaseUrl(event.target.value)}
+                placeholder="Optional override, e.g. http://localhost:8080"
+              />
+            </div>
+            <div className="source-tabs" role="tablist">
+              {[
+                ["url", "URL"],
+                ["file", "File"],
+                ["paste", "Paste"]
+              ].map(([id, tabLabel]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={source === id}
+                  className={`source-tab ${source === id ? "active" : ""}`}
+                  onClick={() => setSource(id)}
+                >
+                  {tabLabel}
+                </button>
+              ))}
+            </div>
+            {source === "url" ? (
+              <div className="field">
+                <label>Spec URL or local file path</label>
+                <input
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                  placeholder="https://petstore.swagger.io/v2/swagger.json"
+                />
+              </div>
+            ) : null}
+            {source === "paste" ? (
+              <div className="field">
+                <label>OpenAPI JSON or YAML</label>
+                <textarea
+                  value={paste}
+                  onChange={(event) => setPaste(event.target.value)}
+                  placeholder="Paste the spec here"
+                />
+              </div>
+            ) : null}
+            {source === "file" ? (
+              <div
+                className={`drop ${dragging ? "drag" : ""}`}
+                onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+                onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+                onDragLeave={(event) => { event.preventDefault(); setDragging(false); }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragging(false);
+                  const file = event.dataTransfer.files[0];
+                  if (file) upload(file);
+                }}
+              >
+                <strong>Drop a Swagger or OpenAPI file</strong>
+                <div className="hint">JSON, YAML, or YML — or choose a file</div>
+                <input
+                  type="file"
+                  accept=".json,.yaml,.yml"
+                  onChange={(event) => event.target.files[0] && upload(event.target.files[0])}
+                />
+              </div>
+            ) : (
+              <div className="actions">
+                <button type="button" className="btn primary" onClick={load} disabled={loading || apiDown}>
+                  {loading ? "Loading…" : "Load spec"}
+                </button>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="actions">
-            <button type="button" className="btn primary" onClick={load} disabled={loading || apiDown}>
-              {loading ? "Loading…" : "Load spec"}
-            </button>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
