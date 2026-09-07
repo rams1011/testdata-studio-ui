@@ -346,6 +346,14 @@ a { color: inherit; text-decoration: none; }
     margin-top: 4px;
 }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.topbar-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+.topbar-actions .actions {
+    justify-content: flex-end;
+}
 
 .btn {
     border: 1px solid var(--navy-2);
@@ -364,16 +372,12 @@ a { color: inherit; text-decoration: none; }
     cursor: not-allowed;
 }
 
-.try-request {
-    margin-top: 16px;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px 14px;
-}
-.try-request .hint {
-    margin: 0;
-    max-width: 36rem;
+.try-request-hint {
+    margin: 8px 0 0;
+    max-width: 28rem;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: right;
 }
 
 .card + .run-result,
