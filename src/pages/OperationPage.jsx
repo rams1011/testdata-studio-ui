@@ -10,7 +10,7 @@ import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
 import StatusCodeField from "../components/StatusCodeField";
 import { useToast } from "../components/Toast";
-import { emptyFromSchema, hasResponseBodySchema, typeWatermark } from "../schema";
+import { emptyFromSchema, hasResponseBodySchema, isEffectivelyEmpty, missingRequiredSchemaFields, typeWatermark } from "../schema";
 import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { generateToast } from "./CasesPage";
@@ -252,16 +252,22 @@ export default function OperationPage() {
     function onKey(event) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (form && operation) save();
+        if (form && operation && !caseSaveBlockers(form, operation, requestBody).length) {
+          save();
+        }
       }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [form, operation, caseId]);
+  }, [form, operation, requestBody, caseId]);
 
   const tryRequestBlockers = useMemo(
     () => (form && operation ? draftRunBlockers(form, operation) : ["Form is still loading"]),
     [form, operation]
+  );
+  const saveBlockers = useMemo(
+    () => (form && operation ? caseSaveBlockers(form, operation, requestBody) : ["Form is still loading"]),
+    [form, operation, requestBody]
   );
 
   if (!operation || !form) {
@@ -283,16 +289,38 @@ export default function OperationPage() {
             {dirty ? " · unsaved" : ""}
           </div>
         </div>
-        <div className="actions">
-          <button type="button" className="btn" onClick={generate}>
-            Generate for this operation
-          </button>
-          <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
-            New case
-          </button>
-          <button type="button" className="btn primary" onClick={save}>
-            {boundCaseId ? "Update" : "Save"}
-          </button>
+        <div className="topbar-actions">
+          <div className="actions">
+            <button
+              type="button"
+              className="btn"
+              onClick={runCurrent}
+              disabled={!!running || tryRequestBlockers.length > 0}
+              title={tryRequestBlockers[0] || "Send the current form without saving"}
+            >
+              {running === "current" ? "Trying…" : "Try this request"}
+            </button>
+            <button type="button" className="btn" onClick={generate}>
+              Generate for this operation
+            </button>
+            <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
+              New case
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={save}
+              disabled={saveBlockers.length > 0}
+              title={saveBlockers[0] || (boundCaseId ? "Update the saved case" : "Save the test case")}
+            >
+              {boundCaseId ? "Update" : "Save"}
+            </button>
+          </div>
+          {saveBlockers.length ? (
+            <p className="hint try-request-hint">{saveBlockers.join(". ")}.</p>
+          ) : tryRequestBlockers.length ? (
+            <p className="hint try-request-hint">{tryRequestBlockers.join(". ")}.</p>
+          ) : null}
         </div>
       </div>
       {operation.description ? <p className="crumb">{operation.description}</p> : null}
@@ -306,7 +334,7 @@ export default function OperationPage() {
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Test case</h3>
-            <Field label="Test name" value={form.testName} onChange={(testName) => setForm({ ...form, testName })} />
+            <Field label="Test name" required value={form.testName} onChange={(testName) => setForm({ ...form, testName })} />
             <div className="row-2">
               <Field label="Test group" value={form.testGroup} onChange={(testGroup) => setForm({ ...form, testGroup })} />
               <SelectField label="Enabled" value={form.enabled} options={["Y", "N"]} onChange={(enabled) => setForm({ ...form, enabled })} />
@@ -325,7 +353,7 @@ export default function OperationPage() {
                 onChange={(baseUrl) => setForm({ ...form, baseUrl })}
               />
             ) : null}
-            <Field label="Base URL" value={form.baseUrl} onChange={(baseUrl) => setForm({ ...form, baseUrl })} />
+            <Field label="Base URL" required value={form.baseUrl} onChange={(baseUrl) => setForm({ ...form, baseUrl })} />
             <div className="row-3">
               <StatusCodeField
                 value={form.statusCode}
@@ -371,7 +399,7 @@ export default function OperationPage() {
           ) : null}
 
           <div className="card" style={{ marginTop: 16 }}>
-            <h3>Request body</h3>
+            <h3>Request body{operation.requestBody?.required ? <span className="req"> *</span> : null}</h3>
             {operation.requestBody ? (
               <RequestBodyEditor
                 key={`${operationKey}-${caseId || "new"}`}
@@ -415,23 +443,6 @@ export default function OperationPage() {
               onChange={(jsonPathAssertions) => setForm((current) => ({ ...current, jsonPathAssertions }))}
             />
           </Collapsible>
-
-          <div className="try-request">
-            <button
-              type="button"
-              className="btn"
-              onClick={runCurrent}
-              disabled={!!running || tryRequestBlockers.length > 0}
-              title={tryRequestBlockers[0] || "Send the current form without saving"}
-            >
-              {running === "current" ? "Trying…" : "Try this request"}
-            </button>
-            <p className="hint">
-              {tryRequestBlockers.length
-                ? tryRequestBlockers.join(". ") + "."
-                : "Sends the form as-is. It does not save the case."}
-            </p>
-          </div>
         </div>
 
         <div>
@@ -474,6 +485,78 @@ export default function OperationPage() {
       </div>
     </div>
   );
+}
+
+function caseSaveBlockers(form, operation, requestBody) {
+  const reasons = [];
+  if (!String(form.testName || "").trim()) {
+    reasons.push("Enter a test name");
+  }
+  if (!String(form.baseUrl || "").trim()) {
+    reasons.push("Set a base URL");
+  }
+  if (!String(form.statusCode ?? "").trim()) {
+    reasons.push("Set an expected status");
+  }
+  const missingParams = missingRequiredParams(form, operation);
+  Object.entries(missingParams).forEach(([label, names]) => {
+    if (names.length) {
+      reasons.push(`Fill required ${label}: ${formatNameList(names)}`);
+    }
+  });
+  if (operation.requestBody?.jsonSchema) {
+    const body = decodeRequestBody(
+      requestBody,
+      operation.requestBody.jsonSchema,
+      form.contentType
+    );
+    const missingBody = missingRequiredSchemaFields(operation.requestBody.jsonSchema, body);
+    if (missingBody.length) {
+      reasons.push(`Fill required body fields: ${formatNameList(missingBody)}`);
+    } else if (operation.requestBody.required && isEffectivelyEmpty(body)) {
+      reasons.push("Fill the required request body");
+    }
+  } else if (operation.requestBody?.required && isEffectivelyEmpty(requestBody)) {
+    reasons.push("Fill the required request body");
+  }
+  return reasons;
+}
+
+function missingRequiredParams(form, operation) {
+  const groups = {
+    "path params": { values: form.pathParams, items: [] },
+    "query params": { values: form.queryParams, items: [] },
+    "headers": { values: form.headers, items: [] },
+    "cookies": { values: form.cookieParams, items: [] }
+  };
+  (operation.parameters || []).forEach((parameter) => {
+    const required = parameter.required || parameter.in === "path";
+    if (!required) {
+      return;
+    }
+    const key = parameter.in === "path"
+      ? "path params"
+      : parameter.in === "query"
+        ? "query params"
+        : parameter.in === "header"
+          ? "headers"
+          : parameter.in === "cookie"
+            ? "cookies"
+            : null;
+    if (!key) {
+      return;
+    }
+    if (!String(groups[key].values?.[parameter.name] || "").trim()) {
+      groups[key].items.push(parameter.name);
+    }
+  });
+  return Object.fromEntries(Object.entries(groups).map(([label, group]) => [label, group.items]));
+}
+
+function formatNameList(names) {
+  const shown = names.slice(0, 8);
+  const extra = names.length - shown.length;
+  return extra > 0 ? `${shown.join(", ")}, and ${extra} more` : shown.join(", ");
 }
 
 function draftRunBlockers(form, operation) {
@@ -557,11 +640,12 @@ function mapParams(parameters, location) {
   return result;
 }
 
-function Field({ label, value, onChange, type = "text", hint }) {
+function Field({ label, value, onChange, type = "text", hint, required }) {
   return (
     <div className="field">
       <label>
         {label}
+        {required ? <span className="req">*</span> : null}
         {hint ? <span className="hint">{hint}</span> : null}
       </label>
       <input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
@@ -599,7 +683,7 @@ function ParamGroup({ label, parameters, values, onChange }) {
         ) : (
           <div className="field" key={parameter.name}>
             <label>
-              {parameter.name}{parameter.required ? " *" : ""}
+              {parameter.name}{parameter.required || parameter.in === "path" ? " *" : ""}
               {parameter.description ? <span className="hint">{parameter.description}</span> : null}
             </label>
             <input
@@ -619,7 +703,7 @@ function ArrayParamField({ parameter, values, onChange }) {
   return (
     <div className="field">
       <label>
-        {parameter.name}{parameter.required ? " *" : ""}
+        {parameter.name}{parameter.required || parameter.in === "path" ? " *" : ""}
         <span className="hint">{parameter.description || "Array — repeated query/header values"}</span>
       </label>
       {items.map((item, index) => (

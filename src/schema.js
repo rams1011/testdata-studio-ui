@@ -389,6 +389,114 @@ export function formatAssertionValue(value) {
   return String(value);
 }
 
+export function missingRequiredSchemaFields(schema, value) {
+  const names = [];
+  collectMissingRequired(schema, value, [], names);
+  return names;
+}
+
+function collectMissingRequired(schema, value, path, names) {
+  if (!schema) {
+    return;
+  }
+  if (schema.oneOf || schema.anyOf) {
+    const variants = schemaVariants(schema);
+    const index = matchVariantIndex(schema, value);
+    collectMissingRequired(variants[index]?.schema || resolveSchemaBranch(schema), value, path, names);
+    return;
+  }
+  const resolved = resolveSchemaBranch(schema);
+  const type = schemaType(resolved);
+  if (type === "object" && resolved?.properties) {
+    const required = new Set(resolved.required || []);
+    Object.entries(resolved.properties).forEach(([name, property]) => {
+      const child = value != null && typeof value === "object" && !Array.isArray(value)
+        ? value[name]
+        : undefined;
+      const childRequired = required.has(name);
+      if (!childRequired && isEffectivelyEmpty(child)) {
+        return;
+      }
+      collectRequiredChild(property, child, path.concat(name), names, childRequired);
+    });
+    return;
+  }
+  if (type === "array") {
+    if (!Array.isArray(value)) {
+      return;
+    }
+    value.forEach((item, index) => {
+      collectMissingRequired(resolved.items || { type: "string" }, item, path.concat(String(index + 1)), names);
+    });
+  }
+}
+
+function collectRequiredChild(schema, value, path, names, required) {
+  const resolved = resolveSchemaBranch(schema);
+  const type = schemaType(resolved);
+  if (type === "object" || type === "union" || schema?.oneOf || schema?.anyOf) {
+    if (required && isEffectivelyEmpty(value)) {
+      names.push(labelForPath(path));
+      return;
+    }
+    collectMissingRequired(schema, value, path, names);
+    return;
+  }
+  if (type === "array") {
+    if (required && !Array.isArray(value)) {
+      names.push(labelForPath(path));
+      return;
+    }
+    collectMissingRequired(schema, value, path, names);
+    return;
+  }
+  if (required && isBlankRequiredValue(value)) {
+    names.push(labelForPath(path));
+  }
+}
+
+function isBlankRequiredValue(value) {
+  if (value == null) {
+    return true;
+  }
+  if (typeof value === "string") {
+    return value.trim() === "";
+  }
+  if (typeof value === "number") {
+    return Number.isNaN(value);
+  }
+  if (typeof value === "object" && !Array.isArray(value) && typeof value.fileId === "string") {
+    return value.fileId.trim() === "";
+  }
+  return false;
+}
+
+export function isEffectivelyEmpty(value) {
+  if (value == null) {
+    return true;
+  }
+  if (typeof value === "string") {
+    return value.trim() === "";
+  }
+  if (typeof value === "number") {
+    return Number.isNaN(value);
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  if (typeof value === "object") {
+    if (typeof value.fileId === "string") {
+      return value.fileId.trim() === "";
+    }
+    return Object.values(value).every(isEffectivelyEmpty);
+  }
+  return false;
+}
+
+function labelForPath(path) {
+  return path.map((part) => (/^\d+$/.test(part) ? part : humanize(part))).join(" / ");
+}
+
 export function parseJsonDocument(value) {
   if (value == null) {
     return undefined;
