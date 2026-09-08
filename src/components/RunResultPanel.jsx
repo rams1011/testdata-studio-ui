@@ -48,15 +48,13 @@ function HoverJson({ value }) {
   const full = prettyBody(value) || String(value ?? "");
   const shown = previewText(value);
   if (!full) {
-    return null;
+    return <span className="hover-json"><span className="hover-json-preview">—</span></span>;
   }
-  if (full === shown) {
-    return shown;
-  }
+  const needsTip = full !== shown;
   return (
-    <span className="hover-json">
+    <span className="hover-json" tabIndex={needsTip ? 0 : undefined}>
       <span className="hover-json-preview">{shown}</span>
-      <span className="hover-json-tip" role="tooltip">{full}</span>
+      {needsTip ? <span className="hover-json-tip" role="tooltip">{full}</span> : null}
     </span>
   );
 }

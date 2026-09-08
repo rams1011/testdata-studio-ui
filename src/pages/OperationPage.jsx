@@ -442,7 +442,7 @@ export default function OperationPage() {
             refreshKey={historyKey}
           />
           <RunResultPanel result={runResult} />
-          <div className="card" style={{ marginTop: 16 }}>
+          <div className="card saved-case-list" style={{ marginTop: 16 }}>
             <h3>Saved for this operation</h3>
             {!cases.length ? (
               <div className="empty">
@@ -451,7 +451,7 @@ export default function OperationPage() {
             ) : cases.map((item) => (
               <div className="array-item" key={item.id}>
                 <div className="array-toolbar">
-                  <div>
+                  <div className="saved-case-meta">
                     <strong>{item.testName}</strong>
                     <div className="hint">{item.method} {item.endpoint}</div>
                   </div>
