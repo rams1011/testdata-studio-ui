@@ -183,6 +183,7 @@ export default function OperationPage() {
       ...form,
       expectedResponse: form.expectedResponse || "NA",
       jsonPathAssertions: form.jsonPathAssertions || "NA",
+      extracts: form.extracts || "NA",
       contentType: form.contentType || "NA",
       statusCode: Number(form.statusCode),
       maxResponseTimeMs: Number(form.maxResponseTimeMs),
@@ -391,6 +392,7 @@ export default function OperationPage() {
           {operation.parameters?.length ? (
             <div className="card" style={{ marginTop: 16 }}>
               <h3>Parameters</h3>
+              <p className="hint">Use {"{{name}}"} to inject a value extracted from an earlier case in this plan.</p>
               <ParamGroup label="Path" parameters={paramGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
               <ParamGroup label="Query" parameters={paramGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
               <ParamGroup label="Headers" parameters={paramGroups.header} values={form.headers} onChange={(headers) => setForm({ ...form, headers })} />
@@ -441,6 +443,13 @@ export default function OperationPage() {
               expectedResponse={form.expectedResponse}
               value={form.jsonPathAssertions}
               onChange={(jsonPathAssertions) => setForm((current) => ({ ...current, jsonPathAssertions }))}
+            />
+          </Collapsible>
+
+          <Collapsible title="Extract for later cases" hint="Reuse {{name}} in this plan" defaultOpen={!!form.extracts}>
+            <ExtractsEditor
+              value={form.extracts}
+              onChange={(extracts) => setForm((current) => ({ ...current, extracts }))}
             />
           </Collapsible>
         </div>
@@ -603,6 +612,7 @@ function formFromOperation(operation, spec) {
     maxResponseTimeMs: defaults.maxResponseTimeMs || 3000,
     expectedResponse: "",
     jsonPathAssertions: "",
+    extracts: "",
     contentType: blankNa(defaults.contentType),
     pathParams: mapParams(operation.parameters, "path"),
     queryParams: mapParams(operation.parameters, "query"),
@@ -622,6 +632,7 @@ function formFromCase(testCase) {
     maxResponseTimeMs: testCase.maxResponseTimeMs || 3000,
     expectedResponse: blankNa(testCase.expectedResponse),
     jsonPathAssertions: blankNa(testCase.jsonPathAssertions),
+    extracts: blankNa(testCase.extracts),
     contentType: blankNa(testCase.contentType),
     pathParams: testCase.pathParams || {},
     queryParams: testCase.queryParams || {},
@@ -649,6 +660,35 @@ function Field({ label, value, onChange, type = "text", hint, required }) {
         {hint ? <span className="hint">{hint}</span> : null}
       </label>
       <input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
+
+function extractsToText(value) {
+  return String(value || "").split("|").filter(Boolean).join("\n");
+}
+
+function textToExtracts(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("|");
+}
+
+function ExtractsEditor({ value, onChange }) {
+  return (
+    <div className="field">
+      <p className="hint">
+        After this case runs, save response values for later cases in the same plan.
+        Use them as {"{{name}}"} in path, query, headers, cookies, URL, body, expected response, or JSONPath values.
+      </p>
+      <textarea
+        rows={4}
+        placeholder={"roleId=$.id\ntoken=$.token\nlocation=header:Location\nsession=cookie:JSESSIONID"}
+        value={extractsToText(value)}
+        onChange={(event) => onChange(textToExtracts(event.target.value))}
+      />
     </div>
   );
 }

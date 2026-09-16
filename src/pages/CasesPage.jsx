@@ -383,6 +383,7 @@ function caseUpdate(item, patch) {
     enabled: item.enabled,
     testGroup: item.testGroup,
     jsonPathAssertions: item.jsonPathAssertions,
+    extracts: item.extracts,
     maxResponseTimeMs: item.maxResponseTimeMs,
     contentType: item.contentType,
     baseUrl: item.baseUrl,
