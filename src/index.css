@@ -786,6 +786,117 @@ a { color: inherit; text-decoration: none; }
 }
 .jsonpath-add input { flex: 1; }
 
+.extract-section { margin: 14px 0 8px; color: #696969; }
+.extract-row {
+    grid-template-columns: minmax(0, 1.6fr) minmax(160px, 0.9fr);
+}
+.extract-choice {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    margin: 0;
+    font-weight: 400;
+    min-width: 0;
+}
+.extract-as {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.extract-as input { flex: 1; min-width: 0; }
+
+.extract-value-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+}
+.extract-value-field.has-extracts {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.95fr);
+}
+.extract-value-field input,
+.extract-value-field select {
+    width: 100%;
+    min-width: 0;
+}
+.extract-search {
+    position: relative;
+    min-width: 0;
+}
+.extract-search-list {
+    position: absolute;
+    z-index: 30;
+    left: 0;
+    right: 0;
+    top: calc(100% - 1px);
+    max-height: 240px;
+    overflow: auto;
+    margin: 0;
+    padding: 4px 0;
+    list-style: none;
+    background: #fff;
+    border: 1px solid var(--line);
+}
+.extract-search-option {
+    display: grid;
+    gap: 2px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: #fff;
+    padding: 8px 10px;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+.extract-search-option strong {
+    font-size: 13px;
+    font-weight: 600;
+}
+.extract-search-option .hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+}
+.extract-search-option.active,
+.extract-search-option:hover {
+    background: #fdecea;
+}
+.extract-search-option.selected strong {
+    color: var(--copper);
+}
+.extract-search-option.clear {
+    color: var(--muted);
+    font-size: 13px;
+}
+.extract-search-empty {
+    padding: 8px 10px;
+    color: var(--muted);
+    font-size: 13px;
+}
+.curl-modal {
+    width: min(720px, 100%);
+}
+.curl-import-text {
+    min-height: 160px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.45;
+    resize: vertical;
+}
+.curl-import-preview {
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--paper);
+}
+
 .hero {
     max-width: 880px;
     margin: 0 auto;

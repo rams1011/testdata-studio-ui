@@ -23,6 +23,7 @@ export default function RequestBodyEditor({ schema, value, onChange, resetKey, c
         jsonAria={xml ? "Request body XML" : "Request body JSON"}
         tabsAria="Request body editor"
         onFillSample={() => onChange(sampleFromSchema(schema))}
+        allowExtracts
       />
     </>
   );

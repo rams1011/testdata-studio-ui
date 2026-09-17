@@ -15,7 +15,8 @@ export default function SchemaBodyEditor({
   onFillSample,
   extraActions,
   emptyToNull = false,
-  format = "json"
+  format = "json",
+  allowExtracts = false
 }) {
   const xml = format === "xml";
   const [mode, setMode] = useState(xml ? "xml" : "form");
@@ -170,7 +171,7 @@ export default function SchemaBodyEditor({
         {extraActions}
       </div>
       {mode === "form" ? (
-        <SchemaForm schema={schema} value={objectValue} onChange={changeForm} filter={filter} caseId={caseId} onEnsureCase={onEnsureCase} />
+        <SchemaForm schema={schema} value={objectValue} onChange={changeForm} filter={filter} caseId={caseId} onEnsureCase={onEnsureCase} allowExtracts={allowExtracts} />
       ) : xml ? (
         <>
           {xmlError ? <div className="body-json-error">{xmlError}</div> : null}

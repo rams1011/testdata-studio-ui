@@ -197,6 +197,9 @@ export function setPath(root, path, value) {
 
 export function coerce(raw, type, schema) {
   if (raw === "") return schema && schema.nullable ? null : "";
+  if (isExtractPlaceholder(raw)) {
+    return String(raw).trim();
+  }
   if (type === "integer") return Number.parseInt(raw, 10);
   if (type === "number") return Number.parseFloat(raw);
   if (schema && schema.enum) {
@@ -251,6 +254,118 @@ export function jsonPathsFromSchema(schema, prefix = "$", depth = 0) {
     results.push(leafPath(prefix, resolved, false));
   }
   return results;
+}
+
+export function jsonPathsFromValue(value, prefix = "$", depth = 0) {
+  const results = [];
+  if (value == null || depth > 8) {
+    return results;
+  }
+  if (Array.isArray(value)) {
+    if (!value.length) {
+      return results;
+    }
+    return jsonPathsFromValue(value[0], `${prefix}[0]`, depth + 1);
+  }
+  if (typeof value === "object") {
+    Object.entries(value).forEach(([name, child]) => {
+      const path = joinJsonPath(prefix, name);
+      if (child && typeof child === "object") {
+        results.push(...jsonPathsFromValue(child, path, depth + 1));
+        return;
+      }
+      results.push({
+        path,
+        type: child == null ? "null" : typeof child,
+        required: false,
+        description: "",
+        sample: formatAssertionValue(child)
+      });
+    });
+    return results;
+  }
+  if (prefix !== "$") {
+    results.push({
+      path: prefix,
+      type: typeof value,
+      required: false,
+      description: "",
+      sample: formatAssertionValue(value)
+    });
+  }
+  return results;
+}
+
+export function parseExtracts(serialized) {
+  const result = [];
+  if (!serialized || String(serialized).trim() === "" || String(serialized).trim().toUpperCase() === "NA") {
+    return result;
+  }
+  String(serialized).split("|").forEach((pair) => {
+    const trimmed = pair.trim();
+    if (!trimmed) {
+      return;
+    }
+    const separator = trimmed.indexOf("=");
+    if (separator < 0) {
+      return;
+    }
+    const name = trimmed.slice(0, separator).trim();
+    const source = trimmed.slice(separator + 1).trim();
+    if (name && source) {
+      result.push({ name, source });
+    }
+  });
+  return result;
+}
+
+export function serializeExtracts(items) {
+  const pairs = (items || [])
+    .filter((item) => item.name && item.source)
+    .map((item) => `${String(item.name).trim()}=${String(item.source).trim()}`);
+  return pairs.length ? pairs.join("|") : "";
+}
+
+const EXTRACT_PLACEHOLDER = /^\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}$/;
+
+export function extractPlaceholderName(value) {
+  const match = String(value ?? "").trim().match(EXTRACT_PLACEHOLDER);
+  return match ? match[1] : "";
+}
+
+export function isExtractPlaceholder(value) {
+  return Boolean(extractPlaceholderName(value));
+}
+
+export function formatExtractPlaceholder(name) {
+  return `{{${name}}}`;
+}
+
+export function collectPlanExtracts(planCases, currentCaseId) {
+  const result = [];
+  const seen = new Set();
+  (planCases || []).forEach((testCase) => {
+    if (currentCaseId && testCase.id === currentCaseId) {
+      return;
+    }
+    if (String(testCase.enabled || "Y").toUpperCase() === "N") {
+      return;
+    }
+    parseExtracts(testCase.extracts).forEach((item) => {
+      if (!item.name || seen.has(item.name)) {
+        return;
+      }
+      seen.add(item.name);
+      result.push({
+        name: item.name,
+        source: item.source,
+        testName: testCase.testName || "Untitled case",
+        method: testCase.method || "",
+        caseId: testCase.id
+      });
+    });
+  });
+  return result;
 }
 
 export function parseJsonPathAssertions(serialized) {
