@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { parseCurl } from "../parseCurl";
 import { matchCurlToOperation } from "../curlImport";
 
-export default function ImportCurlModal({ operations, onClose, onImport }) {
+export default function ImportCurlModal({ operations, allowCreate = false, onClose, onImport }) {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const inputRef = useRef(null);
@@ -41,7 +41,7 @@ export default function ImportCurlModal({ operations, onClose, onImport }) {
       setError(preview?.error || "Paste a curl command");
       return;
     }
-    if (!preview.match) {
+    if (!preview.match && !allowCreate) {
       setError(`No operation in this spec matches ${preview.parsed.method} ${preview.parsed.pathname}`);
       return;
     }
@@ -63,7 +63,10 @@ export default function ImportCurlModal({ operations, onClose, onImport }) {
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
         </div>
         <p className="hint" style={{ marginTop: 0 }}>
-          Paste a curl command. It will open a new case on the matching operation with URL, headers, and body filled in. It is not saved until you click Save.
+          Paste a curl command. It will open a new case on the matching operation with URL, headers, and body filled in.
+          {allowCreate
+            ? " If the API is not in this catalog yet, Studio adds it first."
+            : " It is not saved until you click Save."}
         </p>
         <div className="field">
           <label htmlFor="curl-import-text">curl</label>
@@ -88,6 +91,8 @@ export default function ImportCurlModal({ operations, onClose, onImport }) {
                 Matches {preview.match.operation.method} {preview.match.operation.path}
                 {preview.match.operation.summary ? ` · ${preview.match.operation.summary}` : ""}
               </div>
+            ) : allowCreate ? (
+              <div className="hint">No matching API yet — this will add {preview.parsed.method} {preview.parsed.pathname} to the catalog.</div>
             ) : (
               <div className="hint">No matching operation in this spec.</div>
             )}

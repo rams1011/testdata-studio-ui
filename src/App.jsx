@@ -1,5 +1,8 @@
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import LoadSpecPage from "./pages/LoadSpecPage";
+import LoginPage from "./pages/LoginPage";
+import AdminPage from "./pages/AdminPage";
+import SubscriptionsPage from "./pages/SubscriptionsPage";
 import StudioLayout, { FirstOperationRedirect } from "./pages/StudioLayout";
 import OperationPage from "./pages/OperationPage";
 import CasesPage from "./pages/CasesPage";
@@ -8,6 +11,9 @@ import HistoryPage from "./pages/HistoryPage";
 
 const router = createBrowserRouter([
   { path: "/", element: <LoadSpecPage /> },
+  { path: "/login", element: <LoginPage /> },
+  { path: "/admin", element: <AdminPage /> },
+  { path: "/subscriptions", element: <SubscriptionsPage /> },
   {
     path: "/s/:specId",
     element: <StudioLayout />,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { API_DISPLAY, Api } from "../api";
+import { canManageMembers, clearSession, isSaasAdmin, isWorkspaceReady, saveSession } from "../session";
 import { useToast } from "../components/Toast";
 import LabelField, { specLabel, uniqueLabels } from "../components/LabelField";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
@@ -21,7 +22,7 @@ export default function LoadSpecPage() {
   const [adding, setAdding] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [reloadingId, setReloadingId] = useState("");
-  const [backend, setBackend] = useState({ status: "checking", specs: [] });
+  const [backend, setBackend] = useState({ status: "checking", specs: [], session: null });
   const reloadFileRef = useRef(null);
   const reloadTargetRef = useRef(null);
   const importFileRef = useRef(null);
@@ -31,18 +32,42 @@ export default function LoadSpecPage() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([Api.config(), Api.listSpecs()])
-      .then(([config, specs]) => {
-        if (!cancelled) {
-          setBackend({ status: "ok", config, specs: specs || [] });
+    async function loadHome() {
+      try {
+        const config = await Api.config();
+        const saas = config?.saas === "true" || config?.saas === true;
+        const session = await Api.session();
+        if (cancelled) return;
+        if (saas && !session?.authenticated) {
+          setBackend({ status: "ok", config, specs: [], session, saas: true });
+          return;
         }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setBackend({ status: "down", error: error.message, specs: [] });
+        if (session?.tenant?.id) {
+          saveSession(session.token || undefined, session.tenant.id);
         }
-      });
-    return () => { cancelled = true; };
+        if (saas && session?.authenticated && session.tenant?.ready === false) {
+          setBackend({ status: "ok", config, specs: [], session, saas });
+          return;
+        }
+        const specs = await Api.listSpecs();
+        if (!cancelled) {
+          setBackend({ status: "ok", config, specs: specs || [], session, saas });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackend({ status: "down", error: error.message, specs: [], session: null });
+        }
+      }
+    }
+    loadHome();
+    function onUnauthorized() {
+      loadHome();
+    }
+    window.addEventListener("testdata:unauthorized", onUnauthorized);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("testdata:unauthorized", onUnauthorized);
+    };
   }, []);
 
   loadingRef.current = loading;
@@ -105,9 +130,12 @@ export default function LoadSpecPage() {
         label: label.trim(),
         location: source === "url" ? (url.trim() || null) : null,
         content: source === "paste" ? (paste.trim() || null) : null,
-        baseUrl: baseUrl.trim() || null
+        baseUrl: baseUrl.trim() || null,
+        manual: source === "rest" ? true : undefined
       });
-      navigate(`/s/${spec.specId}`);
+      navigate(source === "rest" ? `/s/${spec.specId}/cases` : `/s/${spec.specId}`, {
+        state: source === "rest" ? { addApi: true } : undefined
+      });
     } catch (error) {
       toast(error.message, true);
     } finally {
@@ -147,6 +175,48 @@ export default function LoadSpecPage() {
   async function refreshSpecs() {
     const next = await Api.listSpecs();
     setBackend((current) => ({ ...current, specs: next || [] }));
+  }
+
+  async function switchWorkspace(tenantId) {
+    try {
+      const session = await Api.switchTenant(tenantId);
+      saveSession(session.token || undefined, session.tenant?.id);
+      const specs = await Api.listSpecs();
+      setBackend((current) => ({ ...current, session, specs: specs || [] }));
+      toast(`Using workspace ${session.tenant?.name}`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function addWorkspace() {
+    const name = window.prompt("New workspace name");
+    if (!name?.trim()) return;
+    try {
+      const tenant = await Api.createTenant({ name: name.trim() });
+      saveSession(undefined, tenant.id);
+      const session = await Api.session();
+      saveSession(session.token || undefined, tenant.id);
+      const specs = await Api.listSpecs();
+      setBackend((current) => ({ ...current, session, specs: specs || [] }));
+      toast(`Created workspace ${tenant.name}`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function signOut() {
+    try {
+      await Api.logout();
+    } catch {
+      clearSession();
+    }
+    setBackend((current) => ({
+      ...current,
+      session: { saas: true, authenticated: false, tenants: [] },
+      specs: []
+    }));
+    navigate("/login");
   }
 
   async function reloadExisting(spec, file) {
@@ -195,19 +265,71 @@ export default function LoadSpecPage() {
   }
 
   const apiDown = backend.status === "down";
+  const saasOn = Boolean(backend.saas || backend.session?.saas);
+  const signedIn = saasOn && Boolean(backend.session?.authenticated || backend.session?.account);
+  const saasLocked = saasOn && !signedIn;
+  const workspacePending = signedIn && backend.session?.tenant?.ready === false;
+  const studioOpen = signedIn && isWorkspaceReady(backend.session);
+  const showAdmin = studioOpen && canManageMembers(backend.session);
+  const showSubscriptions = signedIn && isSaasAdmin(backend.session);
 
   return (
     <div className="hero">
-      <h1>Test Data Studio</h1>
+      <div className="hero-head">
+        <h1>Test Data Studio</h1>
+        {signedIn ? (
+          <div className="hero-actions">
+            {showSubscriptions ? <Link className="btn" to="/subscriptions">Subscriptions</Link> : null}
+            {showAdmin ? <Link className="btn" to="/admin">Admin</Link> : null}
+            <button type="button" className="btn" onClick={signOut}>Sign out</button>
+          </div>
+        ) : null}
+      </div>
       <p>
-        Open an API spec, generate test cases, import a collection, and export JSON or Excel
-        for api-automation.
+        Open an API spec or add REST APIs without Swagger, generate test cases, import a collection,
+        and export JSON or Excel for api-automation.
       </p>
 
-      <div className={`status-banner ${backend.status}`}>
+      {backend.saas && signedIn ? (
+        <div className="workspace-bar-home">
+          <label className="hint" htmlFor="workspace-select">Workspace</label>
+          <select
+            id="workspace-select"
+            value={backend.session.tenant?.id || ""}
+            onChange={(event) => switchWorkspace(event.target.value)}
+          >
+            {(backend.session.tenants || []).map((tenant) => (
+              <option key={tenant.id} value={tenant.id}>
+                {tenant.name}{tenant.ready === false ? " (pending)" : ""}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="btn" onClick={addWorkspace}>New workspace</button>
+          {backend.session.account?.email ? (
+            <span className="hint">{backend.session.account.email}</span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className={`status-banner ${workspacePending ? "pending" : backend.status}`}>
         {backend.status === "checking" && "Connecting to the studio API…"}
-        {backend.status === "ok" && (
-          <>Ready · {storageLabel(backend.config?.storageType)} · {API_DISPLAY}</>
+        {backend.status === "ok" && saasLocked && (
+          <>
+            This Studio is hosted as SaaS. Sign in to open specs for your workspace.
+            <div className="actions" style={{ marginTop: 12 }}>
+              <Link className="btn primary" to="/login">Sign in</Link>
+            </div>
+          </>
+        )}
+        {backend.status === "ok" && workspacePending && (
+          <>
+            {backend.session.tenant?.name || "This workspace"} is not enabled yet.
+            A SaaS admin must mark it ready before anyone can use Studio.
+          </>
+        )}
+        {backend.status === "ok" && !saasLocked && !workspacePending && (
+          <>Ready · {storageLabel(backend.config?.storageType)} · {API_DISPLAY}
+            {backend.session?.tenant?.name ? ` · ${backend.session.tenant.name}` : ""}</>
         )}
         {backend.status === "down" && (
           <>
@@ -217,6 +339,7 @@ export default function LoadSpecPage() {
         )}
       </div>
 
+      {saasLocked || workspacePending ? null : (
       <div className="card home-specs">
         <div className="card-head">
           <h3>Your specs</h3>
@@ -239,11 +362,25 @@ export default function LoadSpecPage() {
               Import collection
             </button>
             <button
+              type="button"
+              className="btn"
+              disabled={apiDown || backend.status === "checking"}
+              onClick={() => {
+                setSource("rest");
+                setAdding(true);
+              }}
+            >
+              Add REST APIs
+            </button>
+            <button
               ref={addButtonRef}
               type="button"
               className="btn primary"
               disabled={apiDown || backend.status === "checking"}
-              onClick={() => setAdding(true)}
+              onClick={() => {
+                setSource("url");
+                setAdding(true);
+              }}
             >
               Add spec
             </button>
@@ -255,17 +392,7 @@ export default function LoadSpecPage() {
               "Looking for saved specs…"
             ) : (
               <>
-                Nothing loaded yet. Add a spec — a unique name is all you need besides the OpenAPI file.
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="btn primary"
-                    disabled={apiDown}
-                    onClick={() => setAdding(true)}
-                  >
-                    Add spec
-                  </button>
-                </div>
+                Nothing loaded yet. Use Add spec for OpenAPI, or Add REST APIs if you do not have Swagger.
               </>
             )}
           </div>
@@ -292,10 +419,14 @@ export default function LoadSpecPage() {
                           <div className="hint">{spec.title}</div>
                         ) : null}
                         <div className="hint">
-                          {spec.operationCount} operations
+                          {spec.manual ? "REST catalog" : `${spec.operationCount} operations`}
+                          {spec.manual && spec.operationCount
+                            ? ` · ${spec.operationCount} API${spec.operationCount === 1 ? "" : "s"}`
+                            : ""}
                           {spec.baseUrl ? ` · ${spec.baseUrl}` : ""}
                         </div>
                       </button>
+                      {spec.manual ? null : (
                       <button
                         type="button"
                         className="btn"
@@ -304,6 +435,7 @@ export default function LoadSpecPage() {
                       >
                         {reloadingId === spec.specId ? "Updating…" : "Update spec"}
                       </button>
+                      )}
                       <button
                         type="button"
                         className="btn danger"
@@ -349,8 +481,9 @@ export default function LoadSpecPage() {
           }}
         />
       </div>
+      )}
 
-      {adding ? (
+      {adding && !saasLocked ? (
         <div
           className="modal-backdrop"
           onMouseDown={(event) => {
@@ -366,7 +499,7 @@ export default function LoadSpecPage() {
             aria-labelledby="add-spec-title"
           >
             <div className="card-head">
-              <h3 id="add-spec-title">Add a spec</h3>
+              <h3 id="add-spec-title">{source === "rest" ? "Add REST APIs" : "Add a spec"}</h3>
               <button type="button" className="btn" disabled={loading} onClick={() => setAdding(false)}>
                 Cancel
               </button>
@@ -381,7 +514,11 @@ export default function LoadSpecPage() {
                 onChange={(event) => setName(event.target.value)}
                 placeholder="e.g. HRM local"
               />
-              <div className="hint">Must be unique. This is your name for the spec — not the OpenAPI title.</div>
+              <div className="hint">
+                {source === "rest"
+                  ? "Must be unique. This catalog holds REST APIs you add by method and path."
+                  : "Must be unique. This is your name for the spec — not the OpenAPI title."}
+              </div>
             </div>
             <LabelField
               id="new-spec-label"
@@ -399,6 +536,7 @@ export default function LoadSpecPage() {
             </div>
             <div className="source-tabs" role="tablist">
               {[
+                ["rest", "REST"],
                 ["url", "URL"],
                 ["file", "File"],
                 ["paste", "Paste"]
@@ -415,6 +553,11 @@ export default function LoadSpecPage() {
                 </button>
               ))}
             </div>
+            {source === "rest" ? (
+              <p className="hint" style={{ marginTop: 0 }}>
+                Creates an empty catalog. Add GET/POST paths in Studio, then save test cases. No OpenAPI file required.
+              </p>
+            ) : null}
             {source === "url" ? (
               <div className="field">
                 <label>Spec URL or local file path</label>
@@ -459,7 +602,7 @@ export default function LoadSpecPage() {
             ) : (
               <div className="actions">
                 <button type="button" className="btn primary" onClick={load} disabled={loading || apiDown}>
-                  {loading ? "Loading…" : "Load spec"}
+                  {loading ? (source === "rest" ? "Creating…" : "Loading…") : source === "rest" ? "Create catalog" : "Load spec"}
                 </button>
               </div>
             )}

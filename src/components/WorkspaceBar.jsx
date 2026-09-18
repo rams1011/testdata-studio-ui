@@ -12,6 +12,7 @@ export default function WorkspaceBar({
   onSelectPlan,
   onPlansChange,
   onReloadSpec,
+  onAddApi,
   onSpecRenamed,
   envEpoch
 }) {
@@ -302,7 +303,9 @@ export default function WorkspaceBar({
               Change
             </button>
             <span>
-              {spec.operationCount} operations
+              {spec.manual
+                ? `REST · ${spec.operationCount || 0} API${spec.operationCount === 1 ? "" : "s"}`
+                : `${spec.operationCount} operations`}
             </span>
             <span>Base URL · {spec.baseUrl || "not set"}</span>
             <button type="button" className="linkish" onClick={() => setEditingBaseUrl(true)}>
@@ -376,9 +379,15 @@ export default function WorkspaceBar({
               <option key={plan.id} value={plan.id}>{plan.name}</option>
             ))}
           </select>
-          <button type="button" className="btn" onClick={chooseReloadSource} disabled={reloading}>
-            {reloading ? "Updating…" : "Update spec"}
-          </button>
+          {onAddApi ? (
+            <button type="button" className="btn" onClick={onAddApi}>
+              Add API
+            </button>
+          ) : (
+            <button type="button" className="btn" onClick={chooseReloadSource} disabled={reloading}>
+              {reloading ? "Updating…" : "Update spec"}
+            </button>
+          )}
         </div>
         <details className="plan-manage">
           <summary>Manage plan</summary>
