@@ -107,7 +107,7 @@ export default function Sidebar({
           History
         </NavLink>
         <NavLink to={`/s/${specId}/export`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-          Export Excel
+          Export
         </NavLink>
       </div>
       <nav className="nav" ref={navRef}>

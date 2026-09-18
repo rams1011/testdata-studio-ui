@@ -4,6 +4,7 @@ import { API_DISPLAY, Api } from "../api";
 import { useToast } from "../components/Toast";
 import LabelField, { specLabel, uniqueLabels } from "../components/LabelField";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
+import { importCollectionToast } from "./ExportPage";
 
 export default function LoadSpecPage() {
   const navigate = useNavigate();
@@ -23,6 +24,7 @@ export default function LoadSpecPage() {
   const [backend, setBackend] = useState({ status: "checking", specs: [] });
   const reloadFileRef = useRef(null);
   const reloadTargetRef = useRef(null);
+  const importFileRef = useRef(null);
   const nameRef = useRef(null);
   const addButtonRef = useRef(null);
   const loadingRef = useRef(false);
@@ -127,6 +129,21 @@ export default function LoadSpecPage() {
     }
   }
 
+  async function importCollection(file) {
+    if (!file) return;
+    setLoading(true);
+    try {
+      const imported = await Api.importCollection(file);
+      sessionStorage.setItem(`testdata.plan.${imported.specId}`, imported.planId);
+      toast(importCollectionToast(imported));
+      navigate(`/s/${imported.specId}/cases`);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function refreshSpecs() {
     const next = await Api.listSpecs();
     setBackend((current) => ({ ...current, specs: next || [] }));
@@ -183,7 +200,7 @@ export default function LoadSpecPage() {
     <div className="hero">
       <h1>Test Data Studio</h1>
       <p>
-        Open an API spec, generate test cases from each operation, run them, and export Excel
+        Open an API spec, generate test cases, import a collection, and export JSON or Excel
         for api-automation.
       </p>
 
@@ -213,6 +230,14 @@ export default function LoadSpecPage() {
                 onChange={(event) => setQuery(event.target.value)}
               />
             ) : null}
+            <button
+              type="button"
+              className="btn"
+              disabled={apiDown || backend.status === "checking" || loading}
+              onClick={() => importFileRef.current?.click()}
+            >
+              Import collection
+            </button>
             <button
               ref={addButtonRef}
               type="button"
@@ -294,6 +319,17 @@ export default function LoadSpecPage() {
             ))}
           </div>
         )}
+        <input
+          ref={importFileRef}
+          type="file"
+          accept=".json,.zip,application/json,application/zip"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            importCollection(file);
+          }}
+        />
         <input
           ref={reloadFileRef}
           type="file"

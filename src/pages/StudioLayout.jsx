@@ -25,6 +25,7 @@ export default function StudioLayout() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState(null);
   const [cases, setCases] = useState([]);
+  const [envEpoch, setEnvEpoch] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,6 +169,7 @@ export default function StudioLayout() {
             onPlansChange={reloadPlans}
             onReloadSpec={reloadSpec}
             onSpecRenamed={handleSpecUpdated}
+            envEpoch={envEpoch}
           />
         ) : null}
         <main className="main">
@@ -181,7 +183,9 @@ export default function StudioLayout() {
               selectPlan,
               reloadPlans,
               reloadCases,
-              caseCounts
+              caseCounts,
+              onSpecUpdated: handleSpecUpdated,
+              onEnvironmentsChanged: () => setEnvEpoch((current) => current + 1)
             }} />
           ) : (
             <div className="empty">Loading spec…</div>

@@ -97,7 +97,7 @@ function filenameFromDisposition(header) {
   return ascii ? ascii[1] : "";
 }
 
-async function download(path, payload) {
+async function download(path, payload, fallbackName) {
   beginRequest();
   try {
     let response;
@@ -118,8 +118,9 @@ async function download(path, payload) {
 
     const blob = await response.blob();
     const fileName = filenameFromDisposition(response.headers.get("Content-Disposition"))
+      || fallbackName
       || payload?.excelFileName
-      || "TestData.xlsx";
+      || "download";
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -247,6 +248,41 @@ export const Api = {
 
   exportCases(payload) {
     return download("/api/testdata/export", payload);
+  },
+
+  exportCollection(payload) {
+    return download("/api/testdata/export-collection", payload, "collection.json");
+  },
+
+  importCollection(file, specId) {
+    const data = new FormData();
+    data.append("file", file);
+    const query = specId ? `?specId=${encodeURIComponent(specId)}` : "";
+    return request(`/api/testdata/import-collection${query}`, { method: "POST", body: data });
+  },
+
+  exportEnvironment(payload) {
+    return download("/api/testdata/export-environment", payload, "environment.json");
+  },
+
+  importEnvironment(file, specId, apply = true) {
+    const data = new FormData();
+    data.append("file", file);
+    const query = new URLSearchParams();
+    query.set("specId", specId);
+    query.set("apply", apply ? "true" : "false");
+    return request(`/api/testdata/import-environment?${query.toString()}`, { method: "POST", body: data });
+  },
+
+  listEnvironments(specId) {
+    return request(`/api/specs/${encodeURIComponent(specId)}/environments`);
+  },
+
+  applyEnvironment(specId, environmentId) {
+    return request(
+      `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}/apply`,
+      { method: "POST" }
+    );
   },
 
   generateCases(payload) {

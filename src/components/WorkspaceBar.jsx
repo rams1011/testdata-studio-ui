@@ -12,13 +12,17 @@ export default function WorkspaceBar({
   onSelectPlan,
   onPlansChange,
   onReloadSpec,
-  onSpecRenamed
+  onSpecRenamed,
+  envEpoch
 }) {
   const { specId } = useParams();
   const { toast } = useToast();
   const fileRef = useRef(null);
+  const envFileRef = useRef(null);
   const [newPlanName, setNewPlanName] = useState("");
   const [reloading, setReloading] = useState(false);
+  const [environments, setEnvironments] = useState([]);
+  const [environmentId, setEnvironmentId] = useState("");
   const needsRename = spec.name && spec.title && spec.name === spec.title;
   const [renaming, setRenaming] = useState(false);
   const [renameFocus, setRenameFocus] = useState(false);
@@ -54,6 +58,31 @@ export default function WorkspaceBar({
       });
     return () => { cancelled = true; };
   }, [spec.specId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Api.listEnvironments(specId)
+      .then((next) => {
+        if (cancelled) return;
+        const list = next || [];
+        setEnvironments(list);
+        const stored = sessionStorage.getItem(`testdata.env.${specId}`);
+        const selected = list.some((environment) => environment.id === stored)
+          ? stored
+          : list.find((environment) => environment.baseUrl && environment.baseUrl === spec.baseUrl)?.id || "";
+        setEnvironmentId(selected);
+        if (selected) {
+          sessionStorage.setItem(`testdata.env.${specId}`, selected);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEnvironments([]);
+          setEnvironmentId("");
+        }
+      });
+    return () => { cancelled = true; };
+  }, [spec.specId, spec.baseUrl, specId, envEpoch]);
 
   async function saveSpecName() {
     const nextName = specName.trim();
@@ -97,6 +126,44 @@ export default function WorkspaceBar({
       setSpecBaseUrl(updated.baseUrl || "");
       setEditingBaseUrl(false);
       toast("Base URL saved");
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function applyEnvironment(nextId) {
+    if (!nextId) {
+      setEnvironmentId("");
+      sessionStorage.removeItem(`testdata.env.${specId}`);
+      return;
+    }
+    try {
+      const applied = await Api.applyEnvironment(specId, nextId);
+      sessionStorage.setItem(`testdata.env.${specId}`, nextId);
+      setEnvironmentId(nextId);
+      const updated = await Api.getSpec(specId);
+      onSpecRenamed?.(updated);
+      toast(`Using environment ${applied.name}`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function importEnvironment(file) {
+    if (!file) return;
+    try {
+      const imported = await Api.importEnvironment(file, specId, true);
+      sessionStorage.setItem(`testdata.env.${imported.specId}`, imported.environmentId);
+      const [updated, next] = await Promise.all([
+        Api.getSpec(specId),
+        Api.listEnvironments(specId)
+      ]);
+      setEnvironments(next || []);
+      setEnvironmentId(imported.environmentId);
+      onSpecRenamed?.(updated);
+      toast(imported.applied
+        ? `Imported environment ${imported.name} and set base URL`
+        : `Imported environment ${imported.name}`);
     } catch (error) {
       toast(error.message, true);
     }
@@ -241,6 +308,22 @@ export default function WorkspaceBar({
             <button type="button" className="linkish" onClick={() => setEditingBaseUrl(true)}>
               Change
             </button>
+            <span>Environment</span>
+            <select
+              id="environment-select"
+              value={environmentId}
+              onChange={(event) => applyEnvironment(event.target.value)}
+            >
+              <option value="">Spec URL</option>
+              {environments.map((environment) => (
+                <option key={environment.id} value={environment.id}>
+                  {environment.name}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="linkish" onClick={() => envFileRef.current?.click()}>
+              Import env
+            </button>
           </div>
         )}
         {editingBaseUrl ? (
@@ -314,6 +397,17 @@ export default function WorkspaceBar({
             Delete plan
           </button>
         </details>
+        <input
+          ref={envFileRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) importEnvironment(file);
+          }}
+        />
         <input
           ref={fileRef}
           type="file"
