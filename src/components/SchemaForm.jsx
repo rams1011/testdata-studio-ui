@@ -1,23 +1,28 @@
-import { useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import { Api } from "../api";
+import ExtractValueField from "./ExtractValueField";
 import { coerce, emptyFromSchema, getPath, humanize, inputType, matchVariantIndex, schemaType, schemaVariants, setPath, typeWatermark } from "../schema";
 
-export default function SchemaForm({ schema, value, onChange, filter = "", caseId, onEnsureCase }) {
+const AllowExtractsContext = createContext(false);
+
+export default function SchemaForm({ schema, value, onChange, filter = "", caseId, onEnsureCase, allowExtracts = false }) {
   const fallback = useMemo(() => emptyFromSchema(schema) ?? {}, [schema]);
   const current = value == null ? fallback : value;
   return (
-    <div className="schema-form">
-      <SchemaNode
-        schema={schema || { type: "object" }}
-        path={[]}
-        label="Body"
-        value={current}
-        onChange={onChange}
-        filter={filter.trim()}
-        caseId={caseId}
-        onEnsureCase={onEnsureCase}
-      />
-    </div>
+    <AllowExtractsContext.Provider value={allowExtracts}>
+      <div className="schema-form">
+        <SchemaNode
+          schema={schema || { type: "object" }}
+          path={[]}
+          label="Body"
+          value={current}
+          onChange={onChange}
+          filter={filter.trim()}
+          caseId={caseId}
+          onEnsureCase={onEnsureCase}
+        />
+      </div>
+    </AllowExtractsContext.Provider>
   );
 }
 
@@ -227,6 +232,7 @@ function SchemaField({ schema, path, name, required, value, onChange, filter, ca
     );
   }
 
+  const allowExtracts = useContext(AllowExtractsContext);
   const current = getPath(value, path);
   const displayValue = current != null && typeof current === "object" ? "" : current;
   const label = (
@@ -307,13 +313,23 @@ function SchemaField({ schema, path, name, required, value, onChange, filter, ca
   return (
     <div className="schema-field">
       {label}
-      <input
-        type={inputType(schema, type)}
-        step={type === "integer" ? "1" : type === "number" ? "any" : undefined}
-        value={displayValue == null ? "" : displayValue}
-        placeholder={typeWatermark(schema)}
-        onChange={(event) => onChange(setPath(value, path, coerce(event.target.value, type, schema)))}
-      />
+      {allowExtracts ? (
+        <ExtractValueField
+          type={inputType(schema, type)}
+          step={type === "integer" ? "1" : type === "number" ? "any" : undefined}
+          value={displayValue == null ? "" : displayValue}
+          placeholder={typeWatermark(schema)}
+          onChange={(next) => onChange(setPath(value, path, coerce(next, type, schema)))}
+        />
+      ) : (
+        <input
+          type={inputType(schema, type)}
+          step={type === "integer" ? "1" : type === "number" ? "any" : undefined}
+          value={displayValue == null ? "" : displayValue}
+          placeholder={typeWatermark(schema)}
+          onChange={(event) => onChange(setPath(value, path, coerce(event.target.value, type, schema)))}
+        />
+      )}
     </div>
   );
 }

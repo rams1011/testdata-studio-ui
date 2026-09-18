@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useBlocker, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { useBlocker, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
 import RequestBodyEditor from "../components/RequestBodyEditor";
 import JsonPathAssertionsPicker from "../components/JsonPathAssertionsPicker";
+import ExtractsPicker from "../components/ExtractsPicker";
+import ExtractValueField, { PlanExtractsProvider } from "../components/ExtractValueField";
+import ImportCurlModal from "../components/ImportCurlModal";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
 import AuthSettings, { emptyAuth, useSpecAuth } from "../components/AuthSettings";
 import LastRunsStrip from "../components/LastRunsStrip";
@@ -10,19 +13,22 @@ import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
 import StatusCodeField from "../components/StatusCodeField";
 import { useToast } from "../components/Toast";
-import { emptyFromSchema, hasResponseBodySchema, isEffectivelyEmpty, missingRequiredSchemaFields, typeWatermark } from "../schema";
+import { collectPlanExtracts, emptyFromSchema, hasResponseBodySchema, isEffectivelyEmpty, missingRequiredSchemaFields, typeWatermark } from "../schema";
 import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { generateToast } from "./CasesPage";
 import { lastOpKey } from "./StudioLayout";
+import { applyCurlImport } from "../curlImport";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
-  const { spec, planId } = useOutletContext();
+  const { spec, planId, operations } = useOutletContext();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [operation, setOperation] = useState(null);
   const [cases, setCases] = useState([]);
+  const [planCases, setPlanCases] = useState([]);
   const [form, setForm] = useState(null);
   const [requestBody, setRequestBody] = useState({});
   const [boundCaseId, setBoundCaseId] = useState(caseId);
@@ -30,9 +36,12 @@ export default function OperationPage() {
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(null);
   const [historyKey, setHistoryKey] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
   const baseline = useRef("");
   const skipUnsavedPrompt = useRef(false);
+  const curlImportRef = useRef(location.state?.curlImport);
   const [, setCleanNonce] = useState(0);
+  curlImportRef.current = location.state?.curlImport;
 
   useEffect(() => {
     sessionStorage.setItem(lastOpKey(specId), operationKey);
@@ -46,34 +55,54 @@ export default function OperationPage() {
   useEffect(() => {
     if (!planId) return;
     let cancelled = false;
+    const pendingImport = curlImportRef.current;
     Promise.all([
       Api.getOperation(specId, operationKey),
-      Api.listCases(specId, operationKey, planId)
-    ]).then(([nextOperation, nextCases]) => {
+      Api.listCases(specId, null, planId)
+    ]).then(([nextOperation, allCases]) => {
       if (cancelled) return;
-      const existing = caseId ? nextCases.find((item) => item.id === caseId) : null;
+      const nextCases = (allCases || []).filter((item) => item.operationKey === operationKey);
+      const existing = caseId ? (allCases || []).find((item) => item.id === caseId) : null;
       if (caseId && !existing) {
         navigate(`/s/${specId}/op/${encodeURIComponent(operationKey)}`, { replace: true });
         return;
       }
       setOperation(nextOperation);
+      setPlanCases(allCases || []);
       setCases(nextCases);
-      const nextForm = existing ? formFromCase(existing) : formFromOperation(nextOperation, spec);
+      const curlImport = !existing ? pendingImport : null;
+      const blank = blankOperationCase(nextOperation, spec);
+      let nextForm = existing ? formFromCase(existing) : blank.form;
       nextForm.contentType = matchedContentType(nextForm.contentType, nextOperation.requestContentTypes)
         || nextForm.contentType;
-      const nextBody = decodeRequestBody(
-        existing?.requestBody
-          ?? emptyFromSchema(nextOperation.requestBody?.jsonSchema) ?? {},
-        nextOperation.requestBody?.jsonSchema,
-        nextForm.contentType
-      );
+      let nextBody = existing
+        ? decodeRequestBody(existing.requestBody, nextOperation.requestBody?.jsonSchema, nextForm.contentType)
+        : blank.requestBody;
+      if (curlImport) {
+        const applied = applyCurlImport({
+          form: blank.form,
+          requestBody: blank.requestBody,
+          operation: nextOperation,
+          spec,
+          parsed: curlImport
+        });
+        nextForm = applied.form;
+        nextBody = applied.requestBody;
+        if (applied.auth) {
+          setAuth((current) => ({ ...current, ...applied.auth }));
+        }
+        toast("Imported curl into a new unsaved case");
+      }
       setForm(nextForm);
       setRequestBody(nextBody);
       setRunResult(null);
-      baseline.current = snapshot(nextForm, nextBody);
+      baseline.current = snapshot(curlImport ? blank.form : nextForm, curlImport ? blank.requestBody : nextBody);
+      if (curlImport) {
+        navigate(location.pathname, { replace: true, state: {} });
+      }
     }).catch((error) => toast(error.message, true));
     return () => { cancelled = true; };
-  }, [specId, operationKey, caseId, spec, planId, toast, navigate]);
+  }, [specId, operationKey, caseId, spec, planId, toast, navigate, location.pathname]);
 
   const dirty = form ? snapshot(form, requestBody) !== baseline.current : false;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
@@ -133,6 +162,20 @@ export default function OperationPage() {
     };
   }, [operation]);
 
+  const visibleParamGroups = useMemo(() => ({
+    path: withImportedParams(paramGroups.path, form?.pathParams, "path"),
+    query: withImportedParams(paramGroups.query, form?.queryParams, "query"),
+    header: withImportedParams(paramGroups.header, form?.headers, "header"),
+    cookie: withImportedParams(paramGroups.cookie, form?.cookieParams, "cookie")
+  }), [paramGroups, form]);
+
+  const showParameters = Object.values(visibleParamGroups).some((items) => items.length);
+
+  const extractOptions = useMemo(
+    () => collectPlanExtracts(planCases, boundCaseId),
+    [planCases, boundCaseId]
+  );
+
   const statusOptions = useMemo(() => {
     if (!operation) return [];
     return allowedStatusCodes(operation, form?.statusCode).map((code) => ({
@@ -141,9 +184,58 @@ export default function OperationPage() {
     }));
   }, [operation, form?.statusCode]);
 
+  function upsertCase(saved) {
+    if (!saved?.id) {
+      return;
+    }
+    setPlanCases((current) => mergeCase(current, saved));
+    if (saved.operationKey === operationKey) {
+      setCases((current) => mergeCase(current, saved));
+    }
+  }
+
+  async function refreshPlanCases() {
+    const all = await Api.listCases(specId, null, planId);
+    setPlanCases(all || []);
+    setCases((all || []).filter((item) => item.operationKey === operationKey));
+  }
+
   function markClean(nextForm, nextBody) {
     baseline.current = snapshot(nextForm, nextBody);
     setCleanNonce((value) => value + 1);
+  }
+
+  function applyImportedCurl(parsed, op) {
+    const blank = blankOperationCase(op, spec);
+    const applied = applyCurlImport({
+      form: blank.form,
+      requestBody: blank.requestBody,
+      operation: op,
+      spec,
+      parsed
+    });
+    setBoundCaseId(undefined);
+    setForm(applied.form);
+    setRequestBody(applied.requestBody);
+    if (applied.auth) {
+      setAuth((current) => ({ ...current, ...applied.auth }));
+    }
+    setRunResult(null);
+    baseline.current = snapshot(blank.form, blank.requestBody);
+    setCleanNonce((value) => value + 1);
+    toast("Imported curl into a new unsaved case");
+  }
+
+  function handleCurlImport(parsed, match) {
+    setImportOpen(false);
+    const key = match.operation.key;
+    const target = `/s/${specId}/op/${encodeURIComponent(key)}`;
+    skipUnsavedPrompt.current = true;
+    if (location.pathname === target && operation && !caseId) {
+      applyImportedCurl(parsed, operation);
+      return;
+    }
+    navigate(target, { state: { curlImport: parsed } });
   }
 
   async function save() {
@@ -154,6 +246,7 @@ export default function OperationPage() {
         : await Api.createCase(payload);
       markClean(form, requestBody);
       setBoundCaseId(saved.id);
+      upsertCase(saved);
       toast(boundCaseId ? "Test case updated" : "Test case saved");
       const nextPath = `/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${saved.id}`;
       if (caseId !== saved.id) {
@@ -171,6 +264,7 @@ export default function OperationPage() {
     }
     const saved = await Api.createCase(casePayload());
     setBoundCaseId(saved.id);
+    upsertCase(saved);
     markClean(form, requestBody);
     return saved.id;
   }
@@ -183,6 +277,7 @@ export default function OperationPage() {
       ...form,
       expectedResponse: form.expectedResponse || "NA",
       jsonPathAssertions: form.jsonPathAssertions || "NA",
+      extracts: form.extracts || "NA",
       contentType: form.contentType || "NA",
       statusCode: Number(form.statusCode),
       maxResponseTimeMs: Number(form.maxResponseTimeMs),
@@ -227,7 +322,7 @@ export default function OperationPage() {
         includePositive: true,
         includeNegative: true
       });
-      setCases(await Api.listCases(specId, operationKey, planId));
+      await refreshPlanCases();
       toast(generateToast(result));
     } catch (error) {
       toast(error.message, true);
@@ -241,7 +336,7 @@ export default function OperationPage() {
       if (id === caseId) {
         navigate(`/s/${specId}/op/${encodeURIComponent(operationKey)}`);
       } else {
-        setCases(await Api.listCases(specId, operationKey, planId));
+        await refreshPlanCases();
       }
     } catch (error) {
       toast(error.message, true);
@@ -277,6 +372,7 @@ export default function OperationPage() {
   const authCue = runResult && !runResult.passed && runResult.actualStatus === 401 && (auth?.type || "NONE") === "NONE";
 
   return (
+    <PlanExtractsProvider extracts={extractOptions}>
     <div className="op-page">
       <div className="topbar sticky-actions">
         <div>
@@ -302,6 +398,9 @@ export default function OperationPage() {
             </button>
             <button type="button" className="btn" onClick={generate}>
               Generate for this operation
+            </button>
+            <button type="button" className="btn" onClick={() => setImportOpen(true)}>
+              Import from curl
             </button>
             <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
               New case
@@ -388,13 +487,18 @@ export default function OperationPage() {
             )}
           </div>
 
-          {operation.parameters?.length ? (
+          {showParameters ? (
             <div className="card" style={{ marginTop: 16 }}>
               <h3>Parameters</h3>
-              <ParamGroup label="Path" parameters={paramGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
-              <ParamGroup label="Query" parameters={paramGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
-              <ParamGroup label="Headers" parameters={paramGroups.header} values={form.headers} onChange={(headers) => setForm({ ...form, headers })} />
-              <ParamGroup label="Cookies" parameters={paramGroups.cookie} values={form.cookieParams} onChange={(cookieParams) => setForm({ ...form, cookieParams })} />
+              <p className="hint">
+                {extractOptions.length
+                  ? "Choose an extracted field from an earlier case, or type a literal value."
+                  : "No extracted fields in this plan yet. On another case, pick fields under Extract for later cases."}
+              </p>
+              <ParamGroup label="Path" parameters={visibleParamGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
+              <ParamGroup label="Query" parameters={visibleParamGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
+              <ParamGroup label="Headers" parameters={visibleParamGroups.header} values={form.headers} onChange={(headers) => setForm({ ...form, headers })} />
+              <ParamGroup label="Cookies" parameters={visibleParamGroups.cookie} values={form.cookieParams} onChange={(cookieParams) => setForm({ ...form, cookieParams })} />
             </div>
           ) : null}
 
@@ -443,6 +547,20 @@ export default function OperationPage() {
               onChange={(jsonPathAssertions) => setForm((current) => ({ ...current, jsonPathAssertions }))}
             />
           </Collapsible>
+
+          <Collapsible
+            title="Extract for later cases"
+            hint={form.extracts ? "Picked fields become {{name}}" : "Off until you pick fields"}
+            defaultOpen
+          >
+            <ExtractsPicker
+              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
+              expectedResponse={form.expectedResponse}
+              runResult={runResult}
+              value={form.extracts}
+              onChange={(extracts) => setForm((current) => ({ ...current, extracts }))}
+            />
+          </Collapsible>
         </div>
 
         <div>
@@ -484,6 +602,14 @@ export default function OperationPage() {
         </div>
       </div>
     </div>
+    {importOpen ? (
+      <ImportCurlModal
+        operations={operations}
+        onClose={() => setImportOpen(false)}
+        onImport={handleCurlImport}
+      />
+    ) : null}
+    </PlanExtractsProvider>
   );
 }
 
@@ -578,6 +704,17 @@ function snapshot(form, requestBody) {
   return JSON.stringify({ form, requestBody });
 }
 
+function mergeCase(list, saved) {
+  const current = list || [];
+  const index = current.findIndex((item) => item.id === saved.id);
+  if (index < 0) {
+    return [...current, saved];
+  }
+  const next = [...current];
+  next[index] = { ...current[index], ...saved };
+  return next;
+}
+
 function decodeRequestBody(body, schema, contentType) {
   if (isXmlContentType(contentType) && looksLikeXml(body)) {
     return xmlToJson(body, schema) ?? body;
@@ -588,6 +725,17 @@ function decodeRequestBody(body, schema, contentType) {
 function blankNa(value) {
   if (value == null) return "";
   return String(value).trim().toUpperCase() === "NA" ? "" : value;
+}
+
+function blankOperationCase(operation, spec) {
+  const form = formFromOperation(operation, spec);
+  form.contentType = matchedContentType(form.contentType, operation.requestContentTypes) || form.contentType;
+  const requestBody = decodeRequestBody(
+    emptyFromSchema(operation.requestBody?.jsonSchema) ?? {},
+    operation.requestBody?.jsonSchema,
+    form.contentType
+  );
+  return { form, requestBody };
 }
 
 function formFromOperation(operation, spec) {
@@ -603,6 +751,7 @@ function formFromOperation(operation, spec) {
     maxResponseTimeMs: defaults.maxResponseTimeMs || 3000,
     expectedResponse: "",
     jsonPathAssertions: "",
+    extracts: "",
     contentType: blankNa(defaults.contentType),
     pathParams: mapParams(operation.parameters, "path"),
     queryParams: mapParams(operation.parameters, "query"),
@@ -622,6 +771,7 @@ function formFromCase(testCase) {
     maxResponseTimeMs: testCase.maxResponseTimeMs || 3000,
     expectedResponse: blankNa(testCase.expectedResponse),
     jsonPathAssertions: blankNa(testCase.jsonPathAssertions),
+    extracts: blankNa(testCase.extracts),
     contentType: blankNa(testCase.contentType),
     pathParams: testCase.pathParams || {},
     queryParams: testCase.queryParams || {},
@@ -667,6 +817,18 @@ function SelectField({ label, value, options, onChange }) {
   );
 }
 
+function withImportedParams(parameters, values, location) {
+  const list = [...(parameters || [])];
+  const known = new Set(list.map((item) => item.name));
+  Object.keys(values || {}).forEach((name) => {
+    if (!name || known.has(name) || !String(values[name] ?? "").trim()) {
+      return;
+    }
+    list.push({ name, in: location, schema: { type: "string" }, description: "From curl" });
+  });
+  return list;
+}
+
 function ParamGroup({ label, parameters, values, onChange }) {
   if (!parameters.length) return null;
   return (
@@ -686,10 +848,10 @@ function ParamGroup({ label, parameters, values, onChange }) {
               {parameter.name}{parameter.required || parameter.in === "path" ? " *" : ""}
               {parameter.description ? <span className="hint">{parameter.description}</span> : null}
             </label>
-            <input
+            <ExtractValueField
               value={values[parameter.name] || ""}
               placeholder={typeWatermark(parameter.schema)}
-              onChange={(event) => onChange({ ...values, [parameter.name]: event.target.value })}
+              onChange={(next) => onChange({ ...values, [parameter.name]: next })}
             />
           </div>
         )
@@ -708,12 +870,12 @@ function ArrayParamField({ parameter, values, onChange }) {
       </label>
       {items.map((item, index) => (
         <div className="array-item" key={index} style={{ marginBottom: 6 }}>
-          <input
+          <ExtractValueField
             value={item}
             placeholder={typeWatermark(parameter.schema?.items || parameter.schema)}
-            onChange={(event) => {
+            onChange={(nextValue) => {
               const next = [...items];
-              next[index] = event.target.value;
+              next[index] = nextValue;
               onChange({ ...values, [parameter.name]: serializeListValue(next) });
             }}
           />

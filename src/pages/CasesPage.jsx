@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
 import AuthSettings, { useSpecAuth } from "../components/AuthSettings";
+import ImportCurlModal from "../components/ImportCurlModal";
 import LastRunsStrip from "../components/LastRunsStrip";
 import RunResultPanel, { resultBadge } from "../components/RunResultPanel";
 import { useToast } from "../components/Toast";
 
 export default function CasesPage() {
   const { specId } = useParams();
-  const { plan, planId, reloadPlans, reloadCases } = useOutletContext();
+  const { plan, planId, operations, reloadPlans, reloadCases } = useOutletContext();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [cases, setCases] = useState([]);
@@ -25,6 +26,7 @@ export default function CasesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [selected, setSelected] = useState({});
   const [historyKey, setHistoryKey] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     if (!planId) return;
@@ -213,6 +215,9 @@ export default function CasesPage() {
           </p>
         </div>
         <div className="actions">
+          <button type="button" className="btn" onClick={() => setImportOpen(true)}>
+            Import from curl
+          </button>
           {cases.length ? (
             <>
               <button type="button" className="btn" onClick={exportPlan}>Download Excel</button>
@@ -257,6 +262,9 @@ export default function CasesPage() {
             Also create a Negative plan
           </label>
           <div className="actions" style={{ marginTop: 14 }}>
+            <button type="button" className="btn" onClick={() => setImportOpen(true)}>
+              Import from curl
+            </button>
             <button type="button" className="btn primary" onClick={generatePlans}>
               Create starter cases
             </button>
@@ -363,6 +371,18 @@ export default function CasesPage() {
           {!visible.length ? <div className="empty">No cases match this filter.</div> : null}
         </div>
       )}
+      {importOpen ? (
+        <ImportCurlModal
+          operations={operations}
+          onClose={() => setImportOpen(false)}
+          onImport={(parsed, match) => {
+            setImportOpen(false);
+            navigate(`/s/${specId}/op/${encodeURIComponent(match.operation.key)}`, {
+              state: { curlImport: parsed }
+            });
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -383,6 +403,7 @@ function caseUpdate(item, patch) {
     enabled: item.enabled,
     testGroup: item.testGroup,
     jsonPathAssertions: item.jsonPathAssertions,
+    extracts: item.extracts,
     maxResponseTimeMs: item.maxResponseTimeMs,
     contentType: item.contentType,
     baseUrl: item.baseUrl,

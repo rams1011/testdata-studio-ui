@@ -38,8 +38,11 @@ function assertionLabel(item) {
   if (item.name === "expectedResponse") {
     return "Expected body";
   }
-  if (item.name === "maxResponseTimeMs") {
+    if (item.name === "maxResponseTimeMs") {
     return "Response time";
+  }
+  if (item.name === "extract") {
+    return item.path || "Extract";
   }
   return item.path || item.name || "Assertion";
 }
@@ -150,6 +153,12 @@ export default function RunResultPanel({ result, title = "Run result" }) {
         <>
           <h3 style={{ marginTop: 16 }}>Response body</h3>
           <pre className="json-preview">{body}</pre>
+        </>
+      ) : null}
+      {result.extracted && Object.keys(result.extracted).length ? (
+        <>
+          <h3 style={{ marginTop: 16 }}>Extracted for later cases</h3>
+          <pre className="json-preview">{JSON.stringify(result.extracted, null, 2)}</pre>
         </>
       ) : null}
     </div>
