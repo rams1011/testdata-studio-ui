@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
+import { canManageMembers, isSaasAdmin, isWorkspaceReady, clearSession } from "../session";
 import Sidebar, { reloadSpecToast } from "../components/Sidebar";
 import WorkspaceBar from "../components/WorkspaceBar";
+import AddApiModal from "../components/AddApiModal";
 import { useToast } from "../components/Toast";
+import { operationRequestFromCurl } from "../curlImport";
 
 function planStorageKey(specId) {
   return `testdata.plan.${specId}`;
@@ -25,6 +28,32 @@ export default function StudioLayout() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState(null);
   const [cases, setCases] = useState([]);
+  const [envEpoch, setEnvEpoch] = useState(0);
+  const [session, setSession] = useState(null);
+  const [addApiOpen, setAddApiOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    Api.session()
+      .then((next) => {
+        if (cancelled) return;
+        setSession(next);
+        if (next?.saas && next?.authenticated && next.tenant?.ready === false) {
+          navigate("/", { replace: true });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSession(null);
+      });
+    function onUnauthorized() {
+      navigate("/login", { replace: true });
+    }
+    window.addEventListener("testdata:unauthorized", onUnauthorized);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("testdata:unauthorized", onUnauthorized);
+    };
+  }, [navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +86,14 @@ export default function StudioLayout() {
       });
     return () => { cancelled = true; };
   }, [specId, toast]);
+
+  useEffect(() => {
+    if (!location.state?.addApi) {
+      return;
+    }
+    setAddApiOpen(true);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
     if (!specId || !planId) {
@@ -96,6 +133,47 @@ export default function StudioLayout() {
     return next || [];
   }
 
+  async function reloadOperations() {
+    const [nextSpec, nextOperations] = await Promise.all([
+      Api.getSpec(specId),
+      Api.listOperations(specId)
+    ]);
+    setSpec(nextSpec);
+    setOperations(nextOperations);
+    return nextOperations;
+  }
+
+  async function addManualOperation(payload) {
+    const created = await Api.addOperation(specId, payload);
+    await reloadOperations();
+    return created;
+  }
+
+  async function deleteManualOperation(operationKey) {
+    await Api.deleteOperation(specId, operationKey);
+    await reloadOperations();
+  }
+
+  async function importCurlAsCase(parsed, match) {
+    let operation = match?.operation;
+    if (!operation && spec?.manual) {
+      operation = await addManualOperation(operationRequestFromCurl(parsed, spec));
+    }
+    if (!operation) {
+      throw new Error(`No operation in this spec matches ${parsed.method} ${parsed.pathname}`);
+    }
+    navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`, { state: { curlImport: parsed } });
+    return operation;
+  }
+
+  async function saveManualOperation(payload) {
+    const created = await addManualOperation(payload);
+    setAddApiOpen(false);
+    toast(`Added ${created.method} ${created.path}`);
+    navigate(`/s/${specId}/op/${encodeURIComponent(created.key)}`);
+    return created;
+  }
+
   async function handleSpecUpdated(updated) {
     setSpec(updated);
     try {
@@ -126,6 +204,15 @@ export default function StudioLayout() {
     return result;
   }
 
+  async function signOut() {
+    try {
+      await Api.logout();
+    } catch {
+      clearSession();
+    }
+    navigate("/login", { replace: true });
+  }
+
   const caseCounts = useMemo(() => {
     const counts = {};
     cases.forEach((item) => {
@@ -145,10 +232,16 @@ export default function StudioLayout() {
     <div className="shell">
       {ready ? (
         <Sidebar
+          spec={spec}
           operations={operations}
           caseCounts={caseCounts}
           search={search}
           onSearch={setSearch}
+          onAddApi={spec.manual ? () => setAddApiOpen(true) : null}
+          account={session?.authenticated ? session.account : null}
+          canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
+          canManageSubscriptions={Boolean(session?.saas) && isSaasAdmin(session)}
+          onSignOut={session?.saas && session?.authenticated ? signOut : null}
         />
       ) : (
         <aside className="sidebar">
@@ -167,7 +260,9 @@ export default function StudioLayout() {
             onSelectPlan={selectPlan}
             onPlansChange={reloadPlans}
             onReloadSpec={reloadSpec}
+            onAddApi={spec.manual ? () => setAddApiOpen(true) : null}
             onSpecRenamed={handleSpecUpdated}
+            envEpoch={envEpoch}
           />
         ) : null}
         <main className="main">
@@ -181,13 +276,22 @@ export default function StudioLayout() {
               selectPlan,
               reloadPlans,
               reloadCases,
-              caseCounts
+              reloadOperations,
+              caseCounts,
+              onAddApi: spec.manual ? () => setAddApiOpen(true) : null,
+              importCurlAsCase,
+              deleteManualOperation,
+              onSpecUpdated: handleSpecUpdated,
+              onEnvironmentsChanged: () => setEnvEpoch((current) => current + 1)
             }} />
           ) : (
             <div className="empty">Loading spec…</div>
           )}
         </main>
       </div>
+      {addApiOpen && spec?.manual ? (
+        <AddApiModal onClose={() => setAddApiOpen(false)} onSave={saveManualOperation} />
+      ) : null}
     </div>
   );
 }

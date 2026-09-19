@@ -9,7 +9,7 @@ import { useToast } from "../components/Toast";
 
 export default function CasesPage() {
   const { specId } = useParams();
-  const { plan, planId, operations, reloadPlans, reloadCases } = useOutletContext();
+  const { plan, planId, operations, spec, reloadPlans, reloadCases, onAddApi, importCurlAsCase } = useOutletContext();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [cases, setCases] = useState([]);
@@ -211,7 +211,9 @@ export default function CasesPage() {
           <p className="hint" style={{ marginTop: 6 }}>
             {cases.length
               ? `${cases.length} case${cases.length === 1 ? "" : "s"} in this plan. Click a row to edit.`
-              : "Create starter cases, or open an operation on the left and save one by hand."}
+              : spec?.manual
+                ? "Add a REST API, or paste curl. Then save a test case."
+                : "Create starter cases, or open an operation on the left and save one by hand."}
           </p>
         </div>
         <div className="actions">
@@ -251,8 +253,11 @@ export default function CasesPage() {
         <div className="card start-card" style={{ marginTop: 16 }}>
           <h3>Get started</h3>
           <p className="empty" style={{ paddingTop: 0 }}>
-            Create one happy-path case per operation. Existing case names are skipped.
+            {spec?.manual && !operations.length
+              ? "Add a REST API by method and path, then save a test case. Curl also creates the API if it is missing."
+              : "Create one happy-path case per operation. Existing case names are skipped."}
           </p>
+          {spec?.manual && !operations.length ? null : (
           <label className="check">
             <input
               type="checkbox"
@@ -261,13 +266,21 @@ export default function CasesPage() {
             />
             Also create a Negative plan
           </label>
+          )}
           <div className="actions" style={{ marginTop: 14 }}>
+            {onAddApi ? (
+              <button type="button" className="btn primary" onClick={onAddApi}>
+                Add API
+              </button>
+            ) : null}
             <button type="button" className="btn" onClick={() => setImportOpen(true)}>
               Import from curl
             </button>
-            <button type="button" className="btn primary" onClick={generatePlans}>
-              Create starter cases
-            </button>
+            {operations.length ? (
+              <button type="button" className={onAddApi ? "btn" : "btn primary"} onClick={generatePlans}>
+                Create starter cases
+              </button>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -374,12 +387,15 @@ export default function CasesPage() {
       {importOpen ? (
         <ImportCurlModal
           operations={operations}
+          allowCreate={Boolean(spec?.manual)}
           onClose={() => setImportOpen(false)}
-          onImport={(parsed, match) => {
-            setImportOpen(false);
-            navigate(`/s/${specId}/op/${encodeURIComponent(match.operation.key)}`, {
-              state: { curlImport: parsed }
-            });
+          onImport={async (parsed, match) => {
+            try {
+              await importCurlAsCase(parsed, match);
+              setImportOpen(false);
+            } catch (error) {
+              toast(error.message, true);
+            }
           }}
         />
       ) : null}

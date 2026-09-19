@@ -22,7 +22,7 @@ import { applyCurlImport } from "../curlImport";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
-  const { spec, planId, operations } = useOutletContext();
+  const { spec, planId, operations, importCurlAsCase, deleteManualOperation } = useOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -226,16 +226,34 @@ export default function OperationPage() {
     toast("Imported curl into a new unsaved case");
   }
 
-  function handleCurlImport(parsed, match) {
-    setImportOpen(false);
-    const key = match.operation.key;
-    const target = `/s/${specId}/op/${encodeURIComponent(key)}`;
+  async function handleCurlImport(parsed, match) {
     skipUnsavedPrompt.current = true;
-    if (location.pathname === target && operation && !caseId) {
-      applyImportedCurl(parsed, operation);
+    try {
+      if (match?.operation && location.pathname === `/s/${specId}/op/${encodeURIComponent(match.operation.key)}` && operation && !caseId) {
+        setImportOpen(false);
+        applyImportedCurl(parsed, operation);
+        return;
+      }
+      await importCurlAsCase(parsed, match);
+      setImportOpen(false);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function removeApi() {
+    if (!operation) return;
+    if (!window.confirm(`Remove ${operation.method} ${operation.path} from this catalog?\n\nSaved cases stay in the plan until you delete them.`)) {
       return;
     }
-    navigate(target, { state: { curlImport: parsed } });
+    try {
+      skipUnsavedPrompt.current = true;
+      await deleteManualOperation(operation.key);
+      toast("API removed");
+      navigate(`/s/${specId}/cases`);
+    } catch (error) {
+      toast(error.message, true);
+    }
   }
 
   async function save() {
@@ -405,6 +423,11 @@ export default function OperationPage() {
             <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
               New case
             </button>
+            {spec?.manual ? (
+              <button type="button" className="btn danger" onClick={removeApi}>
+                Remove API
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn primary"
@@ -605,6 +628,7 @@ export default function OperationPage() {
     {importOpen ? (
       <ImportCurlModal
         operations={operations}
+        allowCreate={Boolean(spec?.manual)}
         onClose={() => setImportOpen(false)}
         onImport={handleCurlImport}
       />

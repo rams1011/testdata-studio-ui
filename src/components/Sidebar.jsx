@@ -2,10 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useParams } from "react-router-dom";
 
 export default function Sidebar({
+  spec,
   operations,
   caseCounts = {},
   search,
-  onSearch
+  onSearch,
+  onAddApi,
+  account,
+  canManage = false,
+  canManageSubscriptions = false,
+  onSignOut
 }) {
   const { specId } = useParams();
   const location = useLocation();
@@ -103,16 +109,26 @@ export default function Sidebar({
           Cases
           {totalCases ? <span className="case-count">{totalCases}</span> : null}
         </NavLink>
+        {onAddApi ? (
+          <button type="button" className="nav-link" onClick={onAddApi}>
+            Add API
+          </button>
+        ) : null}
         <NavLink to={`/s/${specId}/history`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
           History
         </NavLink>
         <NavLink to={`/s/${specId}/export`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-          Export Excel
+          Export
         </NavLink>
       </div>
       <nav className="nav" ref={navRef}>
         {search && !filteredCount ? (
           <div className="empty" style={{ padding: "12px 10px", color: "#b0b0b0" }}>No operations match.</div>
+        ) : null}
+        {!search && !operations.length ? (
+          <div className="empty" style={{ padding: "12px 10px", color: "#b0b0b0" }}>
+            {spec?.manual ? "No APIs yet. Add a method and path, then save test cases." : "No operations in this spec."}
+          </div>
         ) : null}
         {showTags
           ? tagNames.map((tag) => {
@@ -139,6 +155,14 @@ export default function Sidebar({
       </nav>
       <div className="side-foot">
         <NavLink to="/" className="btn ghost">All specs</NavLink>
+        {canManage ? <NavLink to="/admin" className="btn ghost">Admin</NavLink> : null}
+        {canManageSubscriptions ? <NavLink to="/subscriptions" className="btn ghost">Subscriptions</NavLink> : null}
+        {onSignOut ? (
+          <>
+            {account?.email ? <div className="side-foot-user">{account.email}</div> : null}
+            <button type="button" className="btn ghost" onClick={onSignOut}>Sign out</button>
+          </>
+        ) : null}
       </div>
     </aside>
   );

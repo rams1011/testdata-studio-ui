@@ -7,6 +7,23 @@ const SKIP_HEADERS = new Set([
   "content-encoding", "transfer-encoding"
 ]);
 
+export function operationRequestFromCurl(parsed, spec) {
+  const headers = Object.keys(parsed?.headers || {}).filter((name) => !SKIP_HEADERS.has(name.toLowerCase()));
+  const raw = parsed?.body;
+  const hasBody = raw != null && String(raw).trim() !== "";
+  const text = hasBody ? String(raw).trim() : "";
+  const requestExample = text.startsWith("{") || text.startsWith("[") ? text : undefined;
+  return {
+    method: parsed.method,
+    path: pathForManualCatalog(parsed, spec),
+    summary: `${parsed.method} ${parsed.pathname || "/"}`,
+    hasRequestBody: hasBody,
+    requestExample,
+    queryNames: Object.keys(parsed.query || {}),
+    headerNames: headers
+  };
+}
+
 export function matchCurlToOperation(parsed, operations) {
   if (!parsed) {
     return null;
@@ -118,6 +135,23 @@ function splitPath(path) {
     .split("/")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function pathForManualCatalog(parsed, spec) {
+  const pathname = normalizePath(parsed?.pathname);
+  let basePath = "";
+  try {
+    if (spec?.baseUrl) {
+      basePath = new URL(spec.baseUrl, "http://localhost").pathname.replace(/\/+$/, "");
+    }
+  } catch {
+    basePath = "";
+  }
+  if (basePath && basePath !== "/" && pathname.startsWith(basePath)) {
+    const rest = pathname.slice(basePath.length) || "/";
+    return rest.startsWith("/") ? rest : `/${rest}`;
+  }
+  return pathname;
 }
 
 function normalizePath(path) {

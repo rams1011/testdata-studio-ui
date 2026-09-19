@@ -1,3 +1,5 @@
+import { clearSession, getSessionToken, getTenantId } from "./session";
+
 const API_PROXY_TARGET = String(
   import.meta.env.API_PROXY_TARGET || import.meta.env.VITE_API_PROXY_TARGET || "http://localhost:8083"
 ).replace(/\/$/, "");
@@ -58,8 +60,21 @@ async function parseBody(response) {
   }
 }
 
+function authHeaders() {
+  const headers = {};
+  const token = getSessionToken();
+  const tenantId = getTenantId();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (tenantId) {
+    headers["X-Tenant-Id"] = tenantId;
+  }
+  return headers;
+}
+
 async function request(path, options = {}) {
-  const headers = { ...(options.headers || {}) };
+  const headers = { ...authHeaders(), ...(options.headers || {}) };
   if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
@@ -76,6 +91,10 @@ async function request(path, options = {}) {
       return null;
     }
     const body = await parseBody(response);
+    if (response.status === 401) {
+      clearSession();
+      window.dispatchEvent(new Event("testdata:unauthorized"));
+    }
     if (!response.ok) {
       throw new Error(errorMessage(body, response.status));
     }
@@ -97,20 +116,24 @@ function filenameFromDisposition(header) {
   return ascii ? ascii[1] : "";
 }
 
-async function download(path, payload) {
+async function download(path, payload, fallbackName) {
   beginRequest();
   try {
     let response;
     try {
       response = await fetch(apiUrl(path), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
     } catch {
       throw new Error(`Cannot reach API at ${API_DISPLAY}. Start testdata-generator-api at ${API_PROXY_TARGET}.`);
     }
 
+    if (response.status === 401) {
+      clearSession();
+      window.dispatchEvent(new Event("testdata:unauthorized"));
+    }
     if (!response.ok) {
       const body = await parseBody(response);
       throw new Error(errorMessage(body, response.status));
@@ -118,8 +141,9 @@ async function download(path, payload) {
 
     const blob = await response.blob();
     const fileName = filenameFromDisposition(response.headers.get("Content-Disposition"))
+      || fallbackName
       || payload?.excelFileName
-      || "TestData.xlsx";
+      || "download";
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -137,6 +161,68 @@ async function download(path, payload) {
 export const Api = {
   config() {
     return request("/api/testdata/config");
+  },
+
+  session() {
+    return request("/api/auth/session");
+  },
+
+  register(payload) {
+    return request("/api/auth/register", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  login(payload) {
+    return request("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  logout() {
+    return request("/api/auth/logout", { method: "POST" }).finally(() => clearSession());
+  },
+
+  switchTenant(tenantId) {
+    return request("/api/auth/switch-tenant", {
+      method: "POST",
+      body: JSON.stringify({ tenantId })
+    });
+  },
+
+  createTenant(payload) {
+    return request("/api/tenants", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  listMembers() {
+    return request("/api/tenants/current/members");
+  },
+
+  addMember(payload) {
+    return request("/api/tenants/current/members", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  updateMember(accountId, payload) {
+    return request(`/api/tenants/current/members/${encodeURIComponent(accountId)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  removeMember(accountId) {
+    return request(`/api/tenants/current/members/${encodeURIComponent(accountId)}`, {
+      method: "DELETE"
+    });
+  },
+
+  listSubscriptions() {
+    return request("/api/saas/subscriptions");
+  },
+
+  updateSubscription(tenantId, payload) {
+    return request(`/api/saas/subscriptions/${encodeURIComponent(tenantId)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
   },
 
   listSpecs() {
@@ -201,6 +287,19 @@ export const Api = {
     return request(`/api/specs/${encodeURIComponent(specId)}/operations/${encodeURIComponent(operationKey)}`);
   },
 
+  addOperation(specId, payload) {
+    return request(`/api/specs/${encodeURIComponent(specId)}/operations`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  deleteOperation(specId, operationKey) {
+    return request(`/api/specs/${encodeURIComponent(specId)}/operations/${encodeURIComponent(operationKey)}`, {
+      method: "DELETE"
+    });
+  },
+
   listCases(specId, operationKey, planId) {
     const query = new URLSearchParams();
     if (specId) query.set("specId", specId);
@@ -247,6 +346,41 @@ export const Api = {
 
   exportCases(payload) {
     return download("/api/testdata/export", payload);
+  },
+
+  exportCollection(payload) {
+    return download("/api/testdata/export-collection", payload, "collection.json");
+  },
+
+  importCollection(file, specId) {
+    const data = new FormData();
+    data.append("file", file);
+    const query = specId ? `?specId=${encodeURIComponent(specId)}` : "";
+    return request(`/api/testdata/import-collection${query}`, { method: "POST", body: data });
+  },
+
+  exportEnvironment(payload) {
+    return download("/api/testdata/export-environment", payload, "environment.json");
+  },
+
+  importEnvironment(file, specId, apply = true) {
+    const data = new FormData();
+    data.append("file", file);
+    const query = new URLSearchParams();
+    query.set("specId", specId);
+    query.set("apply", apply ? "true" : "false");
+    return request(`/api/testdata/import-environment?${query.toString()}`, { method: "POST", body: data });
+  },
+
+  listEnvironments(specId) {
+    return request(`/api/specs/${encodeURIComponent(specId)}/environments`);
+  },
+
+  applyEnvironment(specId, environmentId) {
+    return request(
+      `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}/apply`,
+      { method: "POST" }
+    );
   },
 
   generateCases(payload) {
