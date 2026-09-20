@@ -22,7 +22,7 @@ import { applyCurlImport } from "../curlImport";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
-  const { spec, planId, operations, importCurlAsCase, deleteManualOperation, runEnvironment } = useOutletContext();
+  const { spec, planId, operations, importCurlAsCase, deleteManualOperation, runEnvironment, envEpoch, onEnvironmentsChanged } = useOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -37,6 +37,8 @@ export default function OperationPage() {
   const [running, setRunning] = useState(null);
   const [historyKey, setHistoryKey] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  const [environments, setEnvironments] = useState([]);
+  const [duplicateTarget, setDuplicateTarget] = useState("");
   const baseline = useRef("");
   const skipUnsavedPrompt = useRef(false);
   const curlImportRef = useRef(location.state?.curlImport);
@@ -58,7 +60,7 @@ export default function OperationPage() {
     const pendingImport = curlImportRef.current;
     Promise.all([
       Api.getOperation(specId, operationKey),
-      Api.listCases(specId, null, planId)
+      Api.listCases(specId, null, planId, runEnvironment?.id)
     ]).then(([nextOperation, allCases]) => {
       if (cancelled) return;
       const nextCases = (allCases || []).filter((item) => item.operationKey === operationKey);
@@ -102,7 +104,29 @@ export default function OperationPage() {
       }
     }).catch((error) => toast(error.message, true));
     return () => { cancelled = true; };
-  }, [specId, operationKey, caseId, spec, planId, toast, navigate, location.pathname]);
+  }, [specId, operationKey, caseId, spec, planId, toast, navigate, location.pathname, runEnvironment?.id]);
+
+  useEffect(() => {
+    if (!specId) return;
+    let cancelled = false;
+    Api.listEnvironments(specId)
+      .then((list) => {
+        if (!cancelled) setEnvironments(list || []);
+      })
+      .catch(() => {
+        if (!cancelled) setEnvironments([]);
+      });
+    return () => { cancelled = true; };
+  }, [specId, envEpoch]);
+
+  const otherEnvironments = useMemo(
+    () => environments.filter((item) => item.id && item.id !== runEnvironment?.id),
+    [environments, runEnvironment?.id]
+  );
+
+  useEffect(() => {
+    setDuplicateTarget(otherEnvironments[0]?.id || "");
+  }, [otherEnvironments]);
 
   const dirty = form ? snapshot(form, requestBody) !== baseline.current : false;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
@@ -188,7 +212,7 @@ export default function OperationPage() {
   }
 
   async function refreshPlanCases() {
-    const all = await Api.listCases(specId, null, planId);
+    const all = await Api.listCases(specId, null, planId, runEnvironment?.id);
     setPlanCases(all || []);
     setCases((all || []).filter((item) => item.operationKey === operationKey));
   }
@@ -306,7 +330,8 @@ export default function OperationPage() {
       contentType: form.contentType || "NA",
       statusCode: Number(form.statusCode),
       maxResponseTimeMs: Number(form.maxResponseTimeMs),
-      requestBody: operation.requestBody ? requestBody : null
+      requestBody: operation.requestBody ? requestBody : null,
+      environmentId: runEnvironment?.id
     };
   }
 
@@ -316,7 +341,8 @@ export default function OperationPage() {
       const result = await Api.runDraft({
         caseId: boundCaseId || undefined,
         testCase: casePayload(),
-        auth
+        auth,
+        environmentId: runEnvironment?.id
       });
       setRunResult(result);
       setHistoryKey((value) => value + 1);
@@ -328,10 +354,35 @@ export default function OperationPage() {
     }
   }
 
+  async function duplicateInto() {
+    if (dirty) {
+      toast("Save this case before duplicating", true);
+      return;
+    }
+    if (!boundCaseId || !duplicateTarget) {
+      toast("Save the case before duplicating into another environment", true);
+      return;
+    }
+    try {
+      const copied = await Api.duplicateCase(boundCaseId, {
+        fromEnvironmentId: runEnvironment?.id,
+        toEnvironmentId: duplicateTarget
+      });
+      const target = environments.find((item) => item.id === duplicateTarget);
+      sessionStorage.setItem(`testdata.env.${specId}`, duplicateTarget);
+      onEnvironmentsChanged?.();
+      skipUnsavedPrompt.current = true;
+      toast(`Created a copy in ${target?.name || "environment"}`);
+      navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${copied.id}`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
   async function runSaved(id) {
     setRunning(id);
     try {
-      const result = await Api.runCase(id, auth);
+      const result = await Api.runCase(id, auth, runEnvironment?.id);
       setRunResult(result);
       setHistoryKey((value) => value + 1);
       toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
@@ -349,7 +400,8 @@ export default function OperationPage() {
         planId,
         operationKey: operation.key,
         includePositive: true,
-        includeNegative: true
+        includeNegative: true,
+        environmentId: runEnvironment?.id
       });
       await refreshPlanCases();
       toast(generateToast(result));
@@ -359,6 +411,9 @@ export default function OperationPage() {
   }
 
   async function remove(id) {
+    if (!window.confirm(`Delete this case${runEnvironment?.name ? ` from ${runEnvironment.name}` : ""}?`)) {
+      return;
+    }
     try {
       await Api.deleteCase(id);
       toast("Test case deleted");
@@ -435,7 +490,7 @@ export default function OperationPage() {
             <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
               New case
             </button>
-            {spec?.manual ? (
+            {spec?.manual || operation.environmentNames?.length ? (
               <button type="button" className="btn danger" onClick={removeApi}>
                 Remove API
               </button>
@@ -460,6 +515,23 @@ export default function OperationPage() {
       {operation.description ? <p className="crumb">{operation.description}</p> : null}
       {authCue ? (
         <div className="status-banner down">API returned 401. Add run authentication if this endpoint needs login.</div>
+      ) : null}
+      {runEnvironment?.name ? (
+        <div className="status-banner ok">
+          Cases in <strong>{runEnvironment.name}</strong>. Save, update, and delete apply only here.
+          {boundCaseId && otherEnvironments.length ? (
+            <div className="actions" style={{ marginTop: 8 }}>
+              <select value={duplicateTarget} onChange={(event) => setDuplicateTarget(event.target.value)}>
+                {otherEnvironments.map((environment) => (
+                  <option key={environment.id} value={environment.id}>{environment.name}</option>
+                ))}
+              </select>
+              <button type="button" className="btn" onClick={duplicateInto}>
+                Duplicate into {otherEnvironments.find((item) => item.id === duplicateTarget)?.name || "environment"}
+              </button>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="grid">
@@ -550,6 +622,7 @@ export default function OperationPage() {
                 value={requestBody}
                 onChange={setRequestBody}
                 contentType={form.contentType}
+                environmentId={runEnvironment?.id}
               />
             ) : (
               <div className="empty">This operation has no request body.</div>
@@ -608,7 +681,7 @@ export default function OperationPage() {
           />
           <RunResultPanel result={runResult} />
           <div className="card saved-case-list" style={{ marginTop: 16 }}>
-            <h3>Saved for this operation</h3>
+            <h3>{runEnvironment?.name ? `Saved in ${runEnvironment.name}` : "Saved for this operation"}</h3>
             {!cases.length ? (
               <div className="empty">
                 No cases yet. Generate for this operation, or Save the form.
@@ -641,7 +714,7 @@ export default function OperationPage() {
     {importOpen ? (
       <ImportCurlModal
         operations={operations}
-        allowCreate={Boolean(spec?.manual)}
+        allowCreate
         onClose={() => setImportOpen(false)}
         onImport={handleCurlImport}
       />
@@ -793,7 +866,8 @@ function formFromOperation(operation, spec) {
     pathParams: mapParams(operation.parameters, "path"),
     queryParams: mapParams(operation.parameters, "query"),
     headers: mapParams(operation.parameters, "header"),
-    cookieParams: mapParams(operation.parameters, "cookie")
+    cookieParams: mapParams(operation.parameters, "cookie"),
+    environments: operation.environmentNames
   };
 }
 
@@ -813,7 +887,8 @@ function formFromCase(testCase) {
     pathParams: testCase.pathParams || {},
     queryParams: testCase.queryParams || {},
     headers: testCase.headers || {},
-    cookieParams: testCase.cookieParams || {}
+    cookieParams: testCase.cookieParams || {},
+    environments: testCase.environments
   };
 }
 

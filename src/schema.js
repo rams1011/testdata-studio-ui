@@ -44,7 +44,10 @@ export function isFileRef(value) {
 }
 
 export function stripFileRefsForEditor(value) {
-  if (value == null || isFileRef(value)) {
+  if (value == null) {
+    return value;
+  }
+  if (isFileRef(value)) {
     return {};
   }
   if (typeof value !== "object" || Array.isArray(value)) {

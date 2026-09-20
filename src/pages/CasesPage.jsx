@@ -30,12 +30,12 @@ export default function CasesPage() {
 
   useEffect(() => {
     if (!planId) return;
-    Api.listCases(specId, undefined, planId).then(setCases).catch((error) => toast(error.message, true));
+    Api.listCases(specId, undefined, planId, runEnvironment?.id).then(setCases).catch((error) => toast(error.message, true));
     setRunById({});
     setSelectedResult(null);
     setPlanSummary(null);
     setSelected({});
-  }, [specId, planId, toast]);
+  }, [specId, planId, toast, runEnvironment?.id]);
 
   const methods = useMemo(
     () => [...new Set(cases.map((item) => item.method).filter(Boolean))].sort(),
@@ -65,7 +65,7 @@ export default function CasesPage() {
   }, [filter, methodFilter, statusFilter]);
 
   async function refresh() {
-    const next = await Api.listCases(specId, undefined, planId);
+    const next = await Api.listCases(specId, undefined, planId, runEnvironment?.id);
     setCases(next);
     await reloadCases?.();
     return next;
@@ -77,8 +77,9 @@ export default function CasesPage() {
       return;
     }
     const planName = plan?.name || "this plan";
+    const envName = runEnvironment?.name || "the current environment";
     const confirmed = window.confirm(
-      `Generate ${includePositive ? "positive" : ""}${includePositive && includeNegative ? " and " : ""}${includeNegative ? "negative" : ""} cases for all operations into ${planName}? Existing case names will be skipped.`
+      `Generate ${includePositive ? "positive" : ""}${includePositive && includeNegative ? " and " : ""}${includeNegative ? "negative" : ""} cases for all operations into ${planName} (${envName})? Existing case names in this environment will be skipped.`
     );
     if (!confirmed) return;
     try {
@@ -86,7 +87,8 @@ export default function CasesPage() {
         specId,
         planId,
         includePositive,
-        includeNegative
+        includeNegative,
+        environmentId: runEnvironment?.id
       });
       await refresh();
       toast(generateToast(result));
@@ -99,10 +101,11 @@ export default function CasesPage() {
     try {
       const result = await Api.generatePlans({
         specId,
-        includeNegative: includeNegativePlan
+        includeNegative: includeNegativePlan,
+        environmentId: runEnvironment?.id
       });
       await reloadPlans(result.smokePlan.id);
-      setCases(await Api.listCases(specId, undefined, result.smokePlan.id));
+      setCases(await Api.listCases(specId, undefined, result.smokePlan.id, runEnvironment?.id));
       toast(generatePlansToast(result));
     } catch (error) {
       toast(error.message, true);
@@ -120,7 +123,7 @@ export default function CasesPage() {
     event.stopPropagation();
     setRunning(id);
     try {
-      const result = await Api.runCase(id, auth);
+      const result = await Api.runCase(id, auth, runEnvironment?.id);
       remember(result);
       setHistoryKey((value) => value + 1);
       toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
@@ -134,7 +137,7 @@ export default function CasesPage() {
   async function runPlan() {
     setRunning("plan");
     try {
-      const result = await Api.runPlan({ specId, planId, auth });
+      const result = await Api.runPlan({ specId, planId, auth, environmentId: runEnvironment?.id });
       const next = {};
       (result.results || []).forEach((item) => {
         if (item.caseId) {
@@ -194,10 +197,10 @@ export default function CasesPage() {
     <div>
       <div className="topbar">
         <div>
-          <h2>Cases</h2>
+          <h2>Cases{runEnvironment?.name ? ` · ${runEnvironment.name}` : ""}</h2>
           <p className="hint" style={{ marginTop: 6 }}>
             {cases.length
-              ? `${cases.length} case${cases.length === 1 ? "" : "s"} in this plan. Click a row to edit.`
+              ? `${cases.length} case${cases.length === 1 ? "" : "s"} in ${runEnvironment?.name || "this plan"}. Click a row to add, update, or delete.`
               : spec?.manual
                 ? "Add a REST API, or paste curl. Then save a test case."
                 : "Create starter cases, or open an operation on the left and save one by hand."}
@@ -275,7 +278,7 @@ export default function CasesPage() {
       ) : (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="fill-bar">
-            <span className="hint">Generate more cases for every operation (duplicates skipped)</span>
+            <span className="hint">Generate more cases for every operation in this environment (duplicates skipped)</span>
             <label className="check">
               <input type="checkbox" checked={includePositive} onChange={(event) => setIncludePositive(event.target.checked)} />
               Positive
@@ -344,7 +347,9 @@ export default function CasesPage() {
                       onChange={(event) => setSelected((current) => ({ ...current, [item.id]: event.target.checked }))}
                     />
                   </td>
-                  <td>{item.testName}</td>
+                  <td>
+                    {item.testName}
+                  </td>
                   <td>{item.method}</td>
                   <td>{item.endpoint}</td>
                   <td>{item.testGroup}</td>
@@ -376,7 +381,7 @@ export default function CasesPage() {
       {importOpen ? (
         <ImportCurlModal
           operations={operations}
-          allowCreate={Boolean(spec?.manual)}
+          allowCreate
           onClose={() => setImportOpen(false)}
           onImport={async (parsed, match) => {
             try {
@@ -412,6 +417,7 @@ function caseUpdate(item, patch) {
     maxResponseTimeMs: item.maxResponseTimeMs,
     contentType: item.contentType,
     baseUrl: item.baseUrl,
+    environments: item.environments,
     ...patch
   };
 }

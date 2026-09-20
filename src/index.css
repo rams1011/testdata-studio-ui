@@ -759,6 +759,10 @@ a { color: inherit; text-decoration: none; }
     border-radius: var(--radius);
     padding: 10px;
 }
+.body-json::placeholder {
+    color: #9a9a9a;
+    font-family: inherit;
+}
 .body-json[aria-invalid="true"] { border-color: var(--danger); }
 .body-json-error {
     color: var(--danger);

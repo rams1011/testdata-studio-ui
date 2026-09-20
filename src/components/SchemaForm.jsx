@@ -5,13 +5,15 @@ import { coerce, collectFileFields, emptyFromSchema, getPath, humanize, inputTyp
 
 const AllowExtractsContext = createContext(false);
 const FileCommitContext = createContext(null);
+const FileEnvironmentContext = createContext(null);
 
-export function SchemaFilePickers({ schema, value, onChange, caseId, onEnsureCase, onFileCommitted }) {
+export function SchemaFilePickers({ schema, value, onChange, caseId, onEnsureCase, onFileCommitted, environmentId }) {
   const fields = collectFileFields(schema);
   if (!fields.length) {
     return null;
   }
   return (
+    <FileEnvironmentContext.Provider value={environmentId}>
     <FileCommitContext.Provider value={onFileCommitted}>
       <div className="schema-file-pickers">
         <p className="hint">
@@ -33,13 +35,15 @@ export function SchemaFilePickers({ schema, value, onChange, caseId, onEnsureCas
         ))}
       </div>
     </FileCommitContext.Provider>
+    </FileEnvironmentContext.Provider>
   );
 }
 
-export default function SchemaForm({ schema, value, onChange, filter = "", caseId, onEnsureCase, onFileCommitted, allowExtracts = false }) {
+export default function SchemaForm({ schema, value, onChange, filter = "", caseId, onEnsureCase, onFileCommitted, allowExtracts = false, environmentId }) {
   const fallback = useMemo(() => emptyFromSchema(schema) ?? {}, [schema]);
   const current = value == null ? fallback : value;
   return (
+    <FileEnvironmentContext.Provider value={environmentId}>
     <FileCommitContext.Provider value={onFileCommitted}>
     <AllowExtractsContext.Provider value={allowExtracts}>
       <div className="schema-form">
@@ -56,10 +60,11 @@ export default function SchemaForm({ schema, value, onChange, filter = "", caseI
       </div>
     </AllowExtractsContext.Provider>
     </FileCommitContext.Provider>
+    </FileEnvironmentContext.Provider>
   );
 }
 
-function SchemaNode({ schema, path, label, value, onChange, filter, caseId, onEnsureCase }) {
+function SchemaNode({ schema, path, label, value, onChange, filter, caseId, onEnsureCase, environmentId }) {
   const type = schemaType(schema);
   const childFilter = filter && nodeSelfMatches(label, schema, filter) ? "" : filter;
   if ((schema?.oneOf || schema?.anyOf) && schemaVariants(schema).length) {
@@ -371,6 +376,7 @@ function FileField({ caseId, onEnsureCase, schema, path, name, required, value, 
   const current = getPath(value, path);
   const meta = isFileRef(current) ? current : null;
   const onFileCommitted = useContext(FileCommitContext);
+  const environmentId = useContext(FileEnvironmentContext);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const label = (
@@ -395,7 +401,7 @@ function FileField({ caseId, onEnsureCase, schema, path, name, required, value, 
         setError("Save the case before uploading a file.");
         return;
       }
-      const uploaded = await Api.uploadRequestFile(id, file, name || "file");
+      const uploaded = await Api.uploadRequestFile(id, file, name || "file", environmentId);
       const next = setPath(value, path, {
         fileId: uploaded.fileId,
         testCaseId: uploaded.testCaseId || id,

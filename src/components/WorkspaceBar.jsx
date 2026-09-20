@@ -15,7 +15,8 @@ export default function WorkspaceBar({
   onAddApi,
   onSpecRenamed,
   envEpoch,
-  onEnvironmentChange
+  onEnvironmentChange,
+  onEnvironmentsChanged
 }) {
   const { specId } = useParams();
   const { toast } = useToast();
@@ -269,6 +270,7 @@ export default function WorkspaceBar({
           authType: envForm.authType
         });
         await refreshEnvironments(created.id, true);
+        onEnvironmentsChanged?.();
         toast(`Created environment ${created.name}`);
       } else {
         const updated = await Api.updateEnvironment(specId, environmentId, {
@@ -277,6 +279,7 @@ export default function WorkspaceBar({
           authType: envForm.authType
         });
         await refreshEnvironments(updated.id, environmentId === sessionStorage.getItem(`testdata.env.${specId}`));
+        onEnvironmentsChanged?.();
         toast(`Saved environment ${updated.name}`);
       }
     } catch (error) {
@@ -293,13 +296,14 @@ export default function WorkspaceBar({
       return;
     }
     const current = selectedEnvironment();
-    if (!window.confirm(`Delete environment "${current?.name || environmentId}"?`)) {
+    if (!window.confirm(`Delete environment "${current?.name || environmentId}"?\n\nCases that exist only in this environment will be deleted.`)) {
       return;
     }
     try {
       await Api.deleteEnvironment(specId, environmentId);
       sessionStorage.removeItem(`testdata.env.${specId}`);
       await refreshEnvironments(null, false);
+      onEnvironmentsChanged?.();
       toast("Environment deleted");
     } catch (error) {
       toast(error.message, true);
@@ -471,8 +475,8 @@ export default function WorkspaceBar({
           <div className="env-manage">
             <p className="hint">
               {envDraft
-                ? "Enter a name and base URL, then Save."
-                : `Editing ${selectedEnvironment()?.name || "environment"}. Switch with the Environment menu.`}
+                ? "Enter a name and base URL, then Save. Cases you add after switching to it belong to that environment."
+                : `Editing ${selectedEnvironment()?.name || "environment"}. Cases you save while it is selected belong to it.`}
             </p>
             <div className="field">
               <label htmlFor="workspace-env-name">Name</label>

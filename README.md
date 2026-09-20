@@ -32,6 +32,7 @@ Open [http://localhost:5173](http://localhost:5173). The home page checks `GET /
 | Open a saved spec | `GET /api/specs/{id}` and `GET /api/specs/{id}/operations` |
 | Operation form | `GET /api/specs/{id}/operations/{key}` |
 | Save / update / delete case | `POST` `PUT` `DELETE /api/testdata` |
+| Duplicate a case into another environment | `POST /api/testdata/{id}/duplicate` |
 | Generate positive / negative cases | `POST /api/testdata/generate` |
 | Generate Smoke / Negative plans | `POST /api/testdata/generate-plans` |
 | Export collection | Choose **JSON** or **Excel** on Export, then download (`POST /api/testdata/export-collection` or `POST /api/testdata/export`; zip with `files/<caseId>/` when the plan has uploads) |
@@ -40,12 +41,13 @@ Open [http://localhost:5173](http://localhost:5173). The home page checks `GET /
 
 ## Environments
 
-An environment is a named host for one spec (`local`, `int`, `prod`). It is **not** a folder of test cases. Plans and cases stay on the spec; the environment only stores a **base URL** and an **auth type** for CI.
+An environment is a named host for one spec (`local`, `int`, `prod`). It stores **base URL** and **auth type**. Test cases belong to the environment selected in the workspace bar: **Save**, **Update**, and **Delete** apply only there. Switch Environment to see that host’s case list.
 
 ```
 Spec (employee-service)
-├── Plans (Default, Smoke, Negative)  → cases
-└── Environments (local, int)         → host + auth placeholders
+├── Plans (Default, Smoke, Negative)
+│   └── Cases in local / cases in int   → separate records
+└── Environments (local, int)           → host + auth
 ```
 
 Studio seeds a `local` environment from the spec URL the first time you open a spec with none saved.
@@ -54,17 +56,19 @@ Studio seeds a `local` environment from the spec URL the first time you open a s
 
 | Control | What it does |
 |---------|----------------|
-| **Environment** menu | Switches the active host. Choosing `int` **applies** that environment: the spec Base URL becomes the int URL, and saved cases that still used the previous spec URL are rewritten. Cases with a custom URL are left as-is. |
-| **New environment…** | Opens a blank form. Enter a name and base URL, then **Save new**. That creates the environment and switches to it. |
-| **Manage environment** | Edits the selected environment’s name, base URL, and auth type. **Save** writes the record. If that environment is the one currently applied, Save also re-applies the URL. **Auth type** also chooses which credential fields **Run authentication** shows. |
-| **Delete {name}** | Removes only the environment record. Plans and cases are not deleted. The spec Base URL is not reverted. |
+| **Environment** menu | Switches the active host **and** the case list. Choosing `int` **applies** that environment: the spec Base URL becomes the int URL, and saved cases that still used the previous spec URL are rewritten. Cases with a custom URL are left as-is. |
+| **New environment…** | Opens a blank form. Enter a name and base URL, then **Save new**. That creates the environment and switches to it. New cases you save belong to it. |
+| **Manage environment** | Edits the selected environment’s name, base URL, and auth type. **Save** writes the record and keeps that environment’s cases (a rename from `local` to `dev` does not drop them). If that environment is the one currently applied, Save also re-applies the URL. **Auth type** also chooses which credential fields **Run authentication** shows. |
+| **Delete {name}** | Removes the environment and cases that exist only in it. Shared leftover cases (no environment stamp) stay. The spec Base URL is not reverted. |
 | **Base URL · Change** | Edits the spec host without creating an environment. Same case-rewrite rule as apply. |
+
+On a saved case, **Duplicate into {environment}** creates a **new** case in the other environment (new id, copied request files). It does not overlay data onto a shared id.
 
 **Run authentication** follows the selected environment: Bearer shows a token field, Basic shows username/password, and None shows no credentials. Tokens stay in the browser session and are never stored on the environment. The same auth type is written into the exported JSON as `${AUTOMATION_*}` placeholders for TestNG.
 
 ### Export and the runner
 
-On **Export**, pick a **Collection type** and download that plan as JSON (`testdata.studio.collection/v1`) or Excel. **Download environment** writes the environment selected in the workspace bar as `testdata.studio.environment/v1` JSON, for example `employee-service.local.environment.json`:
+On **Export**, pick a **Collection type** and download that plan as JSON (`testdata.studio.collection/v1`) or Excel. Cases in the file include `environments: ["int"]` when they belong to that host. **Download environment** writes the environment selected in the workspace bar as `testdata.studio.environment/v1` JSON, for example `employee-service.local.environment.json`:
 
 ```json
 {
@@ -76,7 +80,7 @@ On **Export**, pick a **Collection type** and download that plan as JSON (`testd
 }
 ```
 
-Keep one collection (the cases) and swap environment files in CI:
+Keep the collection (the cases) and swap environment files in CI for host and auth. Cases with `environments: ["int"]` run only when that environment file’s `name` is `int`. Legacy `cases{}` overlays in an environment file still apply on run until you save the case in Studio.
 
 ```properties
 automation.datasource.type=collection

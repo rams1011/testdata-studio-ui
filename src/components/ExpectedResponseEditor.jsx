@@ -31,7 +31,7 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
           className="body-json"
           value={blankNa(value)}
           onChange={(event) => onChange(event.target.value)}
-          placeholder="Leave blank if none"
+          placeholder="Optional. Leave blank if you only check status."
           spellCheck={false}
           aria-label={xml ? "Expected response XML" : "Expected response JSON"}
         />
@@ -78,14 +78,18 @@ function parseExpected(value, schema, xml) {
     return null;
   }
   const text = String(value).trim();
-  if (!text || text.toUpperCase() === "NA") {
+  if (!text || text.toUpperCase() === "NA" || text === "{}") {
     return null;
   }
   if (xml || looksLikeXml(text)) {
     return xmlToJson(text, schema) ?? text;
   }
   try {
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    if (parsed == null || (typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length === 0)) {
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -97,6 +101,9 @@ function stringify(value, schema, xml) {
   }
   if (typeof value === "string") {
     return value;
+  }
+  if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
+    return "";
   }
   if (xml) {
     return jsonToXml(value, schema);

@@ -7,6 +7,7 @@ import WorkspaceBar from "../components/WorkspaceBar";
 import AddApiModal from "../components/AddApiModal";
 import { useToast } from "../components/Toast";
 import { operationRequestFromCurl } from "../curlImport";
+import { visibleInEnvironment } from "../envScope";
 
 function planStorageKey(specId) {
   return `testdata.plan.${specId}`;
@@ -102,7 +103,7 @@ export default function StudioLayout() {
       return;
     }
     let cancelled = false;
-    Api.listCases(specId, undefined, planId)
+    Api.listCases(specId, undefined, planId, runEnvironment?.id)
       .then((next) => {
         if (!cancelled) setCases(next || []);
       })
@@ -110,7 +111,7 @@ export default function StudioLayout() {
         if (!cancelled) setCases([]);
       });
     return () => { cancelled = true; };
-  }, [specId, planId, location.pathname]);
+  }, [specId, planId, location.pathname, runEnvironment?.id]);
 
   function selectPlan(nextPlanId) {
     setPlanId(nextPlanId);
@@ -129,7 +130,7 @@ export default function StudioLayout() {
 
   async function reloadCases() {
     if (!specId || !planId) return [];
-    const next = await Api.listCases(specId, undefined, planId);
+    const next = await Api.listCases(specId, undefined, planId, runEnvironment?.id);
     setCases(next || []);
     return next || [];
   }
@@ -157,7 +158,7 @@ export default function StudioLayout() {
 
   async function importCurlAsCase(parsed, match) {
     let operation = match?.operation;
-    if (!operation && spec?.manual) {
+    if (!operation) {
       operation = await addManualOperation(operationRequestFromCurl(parsed, spec));
     }
     if (!operation) {
@@ -214,6 +215,10 @@ export default function StudioLayout() {
     navigate("/login", { replace: true });
   }
 
+  const visibleOperations = useMemo(
+    () => (operations || []).filter((operation) => visibleInEnvironment(operation.environmentNames, runEnvironment?.name)),
+    [operations, runEnvironment?.name]
+  );
   const caseCounts = useMemo(() => {
     const counts = {};
     cases.forEach((item) => {
@@ -234,11 +239,11 @@ export default function StudioLayout() {
       {ready ? (
         <Sidebar
           spec={spec}
-          operations={operations}
+          operations={visibleOperations}
           caseCounts={caseCounts}
           search={search}
           onSearch={setSearch}
-          onAddApi={spec.manual ? () => setAddApiOpen(true) : null}
+          onAddApi={() => setAddApiOpen(true)}
           account={session?.authenticated ? session.account : null}
           canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
           canManageSubscriptions={Boolean(session?.saas) && isSaasAdmin(session)}
@@ -261,17 +266,19 @@ export default function StudioLayout() {
             onSelectPlan={selectPlan}
             onPlansChange={reloadPlans}
             onReloadSpec={reloadSpec}
-            onAddApi={spec.manual ? () => setAddApiOpen(true) : null}
+            onAddApi={() => setAddApiOpen(true)}
             onSpecRenamed={handleSpecUpdated}
             envEpoch={envEpoch}
             onEnvironmentChange={setRunEnvironment}
+            onEnvironmentsChanged={() => setEnvEpoch((current) => current + 1)}
           />
         ) : null}
         <main className="main">
           {ready ? (
             <Outlet context={{
               spec,
-              operations,
+              operations: visibleOperations,
+              allOperations: operations,
               plans,
               plan,
               planId,
@@ -280,11 +287,12 @@ export default function StudioLayout() {
               reloadCases,
               reloadOperations,
               caseCounts,
-              onAddApi: spec.manual ? () => setAddApiOpen(true) : null,
+              onAddApi: () => setAddApiOpen(true),
               importCurlAsCase,
               deleteManualOperation,
               onSpecUpdated: handleSpecUpdated,
               onEnvironmentsChanged: () => setEnvEpoch((current) => current + 1),
+              envEpoch,
               runEnvironment
             }} />
           ) : (
@@ -292,8 +300,12 @@ export default function StudioLayout() {
           )}
         </main>
       </div>
-      {addApiOpen && spec?.manual ? (
-        <AddApiModal onClose={() => setAddApiOpen(false)} onSave={saveManualOperation} />
+      {addApiOpen ? (
+        <AddApiModal
+          specId={specId}
+          onClose={() => setAddApiOpen(false)}
+          onSave={saveManualOperation}
+        />
       ) : null}
     </div>
   );

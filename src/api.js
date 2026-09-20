@@ -300,11 +300,12 @@ export const Api = {
     });
   },
 
-  listCases(specId, operationKey, planId) {
+  listCases(specId, operationKey, planId, environmentId) {
     const query = new URLSearchParams();
     if (specId) query.set("specId", specId);
     if (planId) query.set("planId", planId);
     if (operationKey) query.set("operationKey", operationKey);
+    if (environmentId) query.set("environmentId", environmentId);
     return request(`/api/testdata?${query.toString()}`);
   },
 
@@ -419,10 +420,10 @@ export const Api = {
     return request("/api/testdata/generate-plans", { method: "POST", body: JSON.stringify(payload) });
   },
 
-  runCase(id, auth) {
+  runCase(id, auth, environmentId) {
     return request(`/api/testdata/${encodeURIComponent(id)}/run`, {
       method: "POST",
-      body: JSON.stringify({ auth })
+      body: JSON.stringify({ auth, environmentId })
     });
   },
 
@@ -432,6 +433,13 @@ export const Api = {
 
   runPlan(payload) {
     return request("/api/testdata/run-plan", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  duplicateCase(id, payload) {
+    return request(`/api/testdata/${encodeURIComponent(id)}/duplicate`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
   },
 
   listRuns({ specId, planId, caseId, outcome, trigger, limit } = {}) {
@@ -466,11 +474,12 @@ export const Api = {
     return request(`/api/runs/compare?${query.toString()}`);
   },
 
-  uploadRequestFile(caseId, file, part = "file") {
+  uploadRequestFile(caseId, file, part = "file", environmentId) {
     const data = new FormData();
     data.append("file", file);
     const query = new URLSearchParams();
     if (part) query.set("part", part);
+    if (environmentId) query.set("environmentId", environmentId);
     return request(`/api/testdata/${encodeURIComponent(caseId)}/files?${query.toString()}`, {
       method: "POST",
       body: data

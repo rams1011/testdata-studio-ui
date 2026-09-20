@@ -10,7 +10,8 @@ export default function RequestBodyEditor({
   caseId,
   onEnsureCase,
   onFileCommitted,
-  contentType
+  contentType,
+  environmentId
 }) {
   const xml = isXmlContentType(contentType);
   return (
@@ -35,6 +36,7 @@ export default function RequestBodyEditor({
         onFillSample={() => onChange(mergeFileRefs(sampleFromSchema(schema), value))}
         allowExtracts
         fileUploads
+        environmentId={environmentId}
       />
     </>
   );
