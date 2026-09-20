@@ -1,14 +1,46 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import { Api } from "../api";
 import ExtractValueField from "./ExtractValueField";
-import { coerce, emptyFromSchema, getPath, humanize, inputType, matchVariantIndex, schemaType, schemaVariants, setPath, typeWatermark } from "../schema";
+import { coerce, collectFileFields, emptyFromSchema, getPath, humanize, inputType, isFileRef, matchVariantIndex, schemaType, schemaVariants, setPath, typeWatermark } from "../schema";
 
 const AllowExtractsContext = createContext(false);
+const FileCommitContext = createContext(null);
 
-export default function SchemaForm({ schema, value, onChange, filter = "", caseId, onEnsureCase, allowExtracts = false }) {
+export function SchemaFilePickers({ schema, value, onChange, caseId, onEnsureCase, onFileCommitted }) {
+  const fields = collectFileFields(schema);
+  if (!fields.length) {
+    return null;
+  }
+  return (
+    <FileCommitContext.Provider value={onFileCommitted}>
+      <div className="schema-file-pickers">
+        <p className="hint">
+          This API sends a multipart file{fields.length === 1 ? ` as part '${fields[0].name}'` : ""}.
+          Choose it here. File bytes are not JSON, so they do not appear in the JSON body.
+        </p>
+        {fields.map((field) => (
+          <FileField
+            key={field.path.join(".") || "file"}
+            caseId={caseId}
+            onEnsureCase={onEnsureCase}
+            schema={field.schema}
+            path={field.path}
+            name={field.name}
+            required
+            value={value}
+            onChange={onChange}
+          />
+        ))}
+      </div>
+    </FileCommitContext.Provider>
+  );
+}
+
+export default function SchemaForm({ schema, value, onChange, filter = "", caseId, onEnsureCase, onFileCommitted, allowExtracts = false }) {
   const fallback = useMemo(() => emptyFromSchema(schema) ?? {}, [schema]);
   const current = value == null ? fallback : value;
   return (
+    <FileCommitContext.Provider value={onFileCommitted}>
     <AllowExtractsContext.Provider value={allowExtracts}>
       <div className="schema-form">
         <SchemaNode
@@ -23,6 +55,7 @@ export default function SchemaForm({ schema, value, onChange, filter = "", caseI
         />
       </div>
     </AllowExtractsContext.Provider>
+    </FileCommitContext.Provider>
   );
 }
 
@@ -337,6 +370,7 @@ function SchemaField({ schema, path, name, required, value, onChange, filter, ca
 function FileField({ caseId, onEnsureCase, schema, path, name, required, value, onChange }) {
   const current = getPath(value, path);
   const meta = isFileRef(current) ? current : null;
+  const onFileCommitted = useContext(FileCommitContext);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const label = (
@@ -361,18 +395,30 @@ function FileField({ caseId, onEnsureCase, schema, path, name, required, value, 
         setError("Save the case before uploading a file.");
         return;
       }
-      const uploaded = await Api.uploadRequestFile(id, file);
-      onChange(setPath(value, path, {
+      const uploaded = await Api.uploadRequestFile(id, file, name || "file");
+      const next = setPath(value, path, {
         fileId: uploaded.fileId,
         testCaseId: uploaded.testCaseId || id,
         fileName: uploaded.fileName,
         contentType: uploaded.contentType,
         sizeBytes: uploaded.sizeBytes
-      }));
+      });
+      onChange(next);
+      if (onFileCommitted) {
+        await onFileCommitted(next, id);
+      }
     } catch (exception) {
       setError(exception.message || "Upload failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function remove() {
+    const next = setPath(value, path, null);
+    onChange(next);
+    if (onFileCommitted) {
+      await onFileCommitted(next, caseId);
     }
   }
 
@@ -386,7 +432,8 @@ function FileField({ caseId, onEnsureCase, schema, path, name, required, value, 
           <button
             type="button"
             className="btn"
-            onClick={() => onChange(setPath(value, path, null))}
+            onClick={remove}
+            disabled={busy}
           >
             Remove
           </button>
@@ -467,14 +514,6 @@ function isScalar(schema) {
   if (type === "array" || type === "union" || schema?.oneOf || schema?.anyOf) return false;
   if (type === "object" && schema && schema.properties) return false;
   return true;
-}
-
-function isFileRef(value) {
-  return value != null
-    && typeof value === "object"
-    && !Array.isArray(value)
-    && typeof value.fileId === "string"
-    && value.fileId.trim() !== "";
 }
 
 function formatSize(bytes) {

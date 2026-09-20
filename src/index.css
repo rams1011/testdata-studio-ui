@@ -318,6 +318,13 @@ a { color: inherit; text-decoration: none; }
     padding: 2px 8px;
     font-size: 13px;
 }
+.workspace-spec-meta label {
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    letter-spacing: 0;
+    text-transform: none;
+}
 .workspace-plan {
     display: flex;
     flex-direction: column;
@@ -346,10 +353,21 @@ a { color: inherit; text-decoration: none; }
     padding: 8px 10px;
 }
 .workspace-bar .linkish {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
     color: var(--copper);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
 }
 .workspace-bar .linkish:hover {
     color: var(--copper-dark);
+    text-decoration: underline;
 }
 .workspace-bar .plan-manage summary {
     color: var(--muted);
@@ -632,6 +650,11 @@ a { color: inherit; text-decoration: none; }
     font-family: var(--mono);
     font-size: 12px;
     word-break: break-all;
+}
+.schema-file-pickers {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
 }
 .field textarea, .schema-field textarea { min-height: 88px; font-family: var(--mono); font-size: 12px; }
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -1481,6 +1504,21 @@ a { color: inherit; text-decoration: none; }
 }
 .fold-card summary::-webkit-details-marker { display: none; }
 .fold-body { margin-top: 12px; }
+.env-manage {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+}
+.env-manage .field {
+    margin: 0;
+}
+.env-manage-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
 .plan-manage {
     margin-top: 8px;
 }

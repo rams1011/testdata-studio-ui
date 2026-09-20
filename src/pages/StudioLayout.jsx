@@ -29,6 +29,7 @@ export default function StudioLayout() {
   const [error, setError] = useState(null);
   const [cases, setCases] = useState([]);
   const [envEpoch, setEnvEpoch] = useState(0);
+  const [runEnvironment, setRunEnvironment] = useState(null);
   const [session, setSession] = useState(null);
   const [addApiOpen, setAddApiOpen] = useState(false);
 
@@ -263,6 +264,7 @@ export default function StudioLayout() {
             onAddApi={spec.manual ? () => setAddApiOpen(true) : null}
             onSpecRenamed={handleSpecUpdated}
             envEpoch={envEpoch}
+            onEnvironmentChange={setRunEnvironment}
           />
         ) : null}
         <main className="main">
@@ -282,7 +284,8 @@ export default function StudioLayout() {
               importCurlAsCase,
               deleteManualOperation,
               onSpecUpdated: handleSpecUpdated,
-              onEnvironmentsChanged: () => setEnvEpoch((current) => current + 1)
+              onEnvironmentsChanged: () => setEnvEpoch((current) => current + 1),
+              runEnvironment
             }} />
           ) : (
             <div className="empty">Loading spec…</div>

@@ -1,8 +1,17 @@
 import SchemaBodyEditor from "./SchemaBodyEditor";
-import { sampleFromSchema } from "../schema";
+import { mergeFileRefs, sampleFromSchema } from "../schema";
 import { isXmlContentType } from "../xml";
 
-export default function RequestBodyEditor({ schema, value, onChange, resetKey, caseId, onEnsureCase, contentType }) {
+export default function RequestBodyEditor({
+  schema,
+  value,
+  onChange,
+  resetKey,
+  caseId,
+  onEnsureCase,
+  onFileCommitted,
+  contentType
+}) {
   const xml = isXmlContentType(contentType);
   return (
     <>
@@ -18,12 +27,14 @@ export default function RequestBodyEditor({ schema, value, onChange, resetKey, c
         resetKey={`${resetKey}:${xml ? "xml" : "json"}`}
         caseId={caseId}
         onEnsureCase={onEnsureCase}
+        onFileCommitted={onFileCommitted}
         format={xml ? "xml" : "json"}
         searchAria="Search request body fields"
         jsonAria={xml ? "Request body XML" : "Request body JSON"}
         tabsAria="Request body editor"
-        onFillSample={() => onChange(sampleFromSchema(schema))}
+        onFillSample={() => onChange(mergeFileRefs(sampleFromSchema(schema), value))}
         allowExtracts
+        fileUploads
       />
     </>
   );

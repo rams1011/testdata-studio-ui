@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
-import AuthSettings, { useSpecAuth } from "../components/AuthSettings";
+import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
 import ImportCurlModal from "../components/ImportCurlModal";
 import LastRunsStrip from "../components/LastRunsStrip";
 import RunResultPanel, { resultBadge } from "../components/RunResultPanel";
@@ -9,7 +9,7 @@ import { useToast } from "../components/Toast";
 
 export default function CasesPage() {
   const { specId } = useParams();
-  const { plan, planId, operations, spec, reloadPlans, reloadCases, onAddApi, importCurlAsCase } = useOutletContext();
+  const { plan, planId, operations, spec, reloadPlans, reloadCases, onAddApi, importCurlAsCase, runEnvironment } = useOutletContext();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [cases, setCases] = useState([]);
@@ -201,7 +201,7 @@ export default function CasesPage() {
   }
 
   const authCue = selectedResult && !selectedResult.passed && selectedResult.actualStatus === 401
-    && (auth?.type || "NONE") === "NONE";
+    && authCredentialsMissing(auth, runEnvironment?.authType);
 
   return (
     <div>
@@ -230,7 +230,7 @@ export default function CasesPage() {
           ) : null}
         </div>
       </div>
-      <AuthSettings auth={auth} onChange={setAuth} />
+      <AuthSettings auth={auth} onChange={setAuth} environment={runEnvironment} />
       <LastRunsStrip specId={specId} planId={planId} refreshKey={historyKey} />
       {authCue ? (
         <div className="status-banner down" style={{ marginTop: 16 }}>

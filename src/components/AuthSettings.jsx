@@ -62,38 +62,68 @@ const AUTH_TYPES = [
   { value: "OAUTH2", label: "OAuth2 client credentials" }
 ];
 
-export default function AuthSettings({ auth, onChange, specAuth }) {
-  const type = auth?.type || "NONE";
+export function normalizeAuthType(value) {
+  const type = String(value || "NONE").trim().toUpperCase();
+  if (type === "TOKEN") return "BEARER";
+  if (type === "CREDENTIALS") return "BASIC";
+  if (type === "APIKEY" || type === "API-KEY") return "API_KEY";
+  if (type === "OAUTH") return "OAUTH2";
+  return AUTH_TYPES.some((item) => item.value === type) ? type : "NONE";
+}
+
+export function authCredentialsMissing(auth, environmentAuthType) {
+  const type = normalizeAuthType(environmentAuthType || auth?.type);
+  if (type === "NONE") return true;
+  if (type === "BEARER") return !String(auth?.token || "").trim();
+  if (type === "BASIC") {
+    return !String(auth?.username || "").trim() || !String(auth?.password || "").trim();
+  }
+  if (type === "API_KEY") return !String(auth?.apiKey || "").trim();
+  if (type === "OAUTH2") {
+    if (String(auth?.token || "").trim()) return false;
+    return !String(auth?.clientId || "").trim() || !String(auth?.clientSecret || "").trim()
+      || !String(auth?.tokenUrl || "").trim();
+  }
+  return false;
+}
+
+export default function AuthSettings({ auth, onChange, specAuth, environment }) {
+  const envType = environment ? normalizeAuthType(environment.authType) : "";
+  const type = envType || normalizeAuthType(auth?.type);
+  const typeLabel = AUTH_TYPES.find((item) => item.value === type)?.label || type;
+  const envName = environment?.name;
+
+  useEffect(() => {
+    if (!envType) {
+      return;
+    }
+    if (normalizeAuthType(auth?.type) === envType) {
+      return;
+    }
+    onChange({ ...emptyAuth(), ...auth, type: envType });
+  }, [envType, auth, onChange]);
 
   function patch(fields) {
-    onChange({ ...auth, ...fields });
+    onChange({ ...auth, type, ...fields });
   }
-
-  const typeLabel = AUTH_TYPES.find((item) => item.value === type)?.label || type;
 
   return (
     <details className="card auth-card" defaultOpen={type !== "NONE"}>
       <summary>
         Run authentication
-        <span className="hint">{type === "NONE" ? "Off — click to add credentials" : typeLabel}</span>
+        <span className="hint">
+          {type === "NONE"
+            ? envName ? `${envName} · Off` : "Off"
+            : envName ? `${envName} · ${typeLabel}` : typeLabel}
+        </span>
       </summary>
       <p className="hint" style={{ marginTop: 8, marginBottom: 12 }}>
-        Used only when you click Run — not saved with the case. Choose None for 401 tests that already set Authorization.
+        Used only when you click Run — not saved with the case.
+        {type === "NONE"
+          ? ` ${envName || "This environment"} does not send credentials. Change Auth type under Manage environment if this host needs login.`
+          : ` Enter credentials for ${envName || "this environment"}. Change Auth type under Manage environment.`}
         {specAuth && specAuth.type && specAuth.type !== "NONE" ? ` Spec uses ${specAuth.type}${specAuth.schemeName ? ` (${specAuth.schemeName})` : ""}.` : ""}
       </p>
-      {type === "NONE" ? (
-        <p className="hint" style={{ marginBottom: 12 }}>
-          If this API needs login, add credentials before Run. A 401 usually means auth is missing.
-        </p>
-      ) : null}
-      <div className="field">
-        <label>Auth type</label>
-        <select value={type} onChange={(event) => patch({ type: event.target.value })}>
-          {AUTH_TYPES.map((item) => (
-            <option key={item.value} value={item.value}>{item.label}</option>
-          ))}
-        </select>
-      </div>
       {type === "BASIC" ? (
         <div className="row-2">
           <div className="field">
@@ -128,34 +158,32 @@ export default function AuthSettings({ auth, onChange, specAuth }) {
         </div>
       ) : null}
       {type === "API_KEY" ? (
-        <>
-          <div className="row-3">
-            <div className="field">
-              <label>Key name</label>
-              <input
-                value={auth.apiKeyName || ""}
-                onChange={(event) => patch({ apiKeyName: event.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label>Send in</label>
-              <select value={auth.apiKeyIn || "header"} onChange={(event) => patch({ apiKeyIn: event.target.value })}>
-                <option value="header">Header</option>
-                <option value="query">Query</option>
-                <option value="cookie">Cookie</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Key value</label>
-              <input
-                type="password"
-                autoComplete="off"
-                value={auth.apiKey || ""}
-                onChange={(event) => patch({ apiKey: event.target.value })}
-              />
-            </div>
+        <div className="row-3">
+          <div className="field">
+            <label>Key name</label>
+            <input
+              value={auth.apiKeyName || ""}
+              onChange={(event) => patch({ apiKeyName: event.target.value })}
+            />
           </div>
-        </>
+          <div className="field">
+            <label>Send in</label>
+            <select value={auth.apiKeyIn || "header"} onChange={(event) => patch({ apiKeyIn: event.target.value })}>
+              <option value="header">Header</option>
+              <option value="query">Query</option>
+              <option value="cookie">Cookie</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Key value</label>
+            <input
+              type="password"
+              autoComplete="off"
+              value={auth.apiKey || ""}
+              onChange={(event) => patch({ apiKey: event.target.value })}
+            />
+          </div>
+        </div>
       ) : null}
       {type === "OAUTH2" ? (
         <>

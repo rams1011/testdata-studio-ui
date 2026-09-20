@@ -376,10 +376,38 @@ export const Api = {
     return request(`/api/specs/${encodeURIComponent(specId)}/environments`);
   },
 
+  createEnvironment(specId, payload) {
+    return request(`/api/specs/${encodeURIComponent(specId)}/environments`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  updateEnvironment(specId, environmentId, payload) {
+    return request(
+      `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}`,
+      { method: "PUT", body: JSON.stringify(payload) }
+    );
+  },
+
+  duplicateEnvironment(specId, environmentId) {
+    return request(
+      `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}/duplicate`,
+      { method: "POST" }
+    );
+  },
+
   applyEnvironment(specId, environmentId) {
     return request(
       `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}/apply`,
       { method: "POST" }
+    );
+  },
+
+  deleteEnvironment(specId, environmentId) {
+    return request(
+      `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}`,
+      { method: "DELETE" }
     );
   },
 
@@ -438,9 +466,14 @@ export const Api = {
     return request(`/api/runs/compare?${query.toString()}`);
   },
 
-  uploadRequestFile(caseId, file) {
+  uploadRequestFile(caseId, file, part = "file") {
     const data = new FormData();
     data.append("file", file);
-    return request(`/api/testdata/${encodeURIComponent(caseId)}/files`, { method: "POST", body: data });
+    const query = new URLSearchParams();
+    if (part) query.set("part", part);
+    return request(`/api/testdata/${encodeURIComponent(caseId)}/files?${query.toString()}`, {
+      method: "POST",
+      body: data
+    });
   }
 };

@@ -14,16 +14,20 @@ export default function WorkspaceBar({
   onReloadSpec,
   onAddApi,
   onSpecRenamed,
-  envEpoch
+  envEpoch,
+  onEnvironmentChange
 }) {
   const { specId } = useParams();
   const { toast } = useToast();
   const fileRef = useRef(null);
-  const envFileRef = useRef(null);
   const [newPlanName, setNewPlanName] = useState("");
   const [reloading, setReloading] = useState(false);
   const [environments, setEnvironments] = useState([]);
   const [environmentId, setEnvironmentId] = useState("");
+  const [envDraft, setEnvDraft] = useState(false);
+  const [envManageOpen, setEnvManageOpen] = useState(false);
+  const [envForm, setEnvForm] = useState({ name: "local", baseUrl: "", authType: "NONE" });
+  const [savingEnv, setSavingEnv] = useState(false);
   const needsRename = spec.name && spec.title && spec.name === spec.title;
   const [renaming, setRenaming] = useState(false);
   const [renameFocus, setRenameFocus] = useState(false);
@@ -70,16 +74,22 @@ export default function WorkspaceBar({
         const stored = sessionStorage.getItem(`testdata.env.${specId}`);
         const selected = list.some((environment) => environment.id === stored)
           ? stored
-          : list.find((environment) => environment.baseUrl && environment.baseUrl === spec.baseUrl)?.id || "";
+          : list.find((environment) => environment.baseUrl && environment.baseUrl === spec.baseUrl)?.id
+            || list[0]?.id
+            || "";
         setEnvironmentId(selected);
+        setEnvDraft(false);
+        setEnvForm(envFormFrom(list, selected, spec));
         if (selected) {
           sessionStorage.setItem(`testdata.env.${specId}`, selected);
         }
+        notifyEnvironment(list.find((environment) => environment.id === selected) || null);
       })
       .catch(() => {
         if (!cancelled) {
           setEnvironments([]);
           setEnvironmentId("");
+          notifyEnvironment(null);
         }
       });
     return () => { cancelled = true; };
@@ -132,10 +142,68 @@ export default function WorkspaceBar({
     }
   }
 
+  function selectedEnvironment() {
+    return environments.find((environment) => environment.id === environmentId);
+  }
+
+  function notifyEnvironment(environment) {
+    if (!onEnvironmentChange) {
+      return;
+    }
+    if (!environment) {
+      onEnvironmentChange(null);
+      return;
+    }
+    onEnvironmentChange({
+      id: environment.id,
+      name: environment.name,
+      authType: environment.authType || "NONE"
+    });
+  }
+
+  async function refreshEnvironments(preferredId, applySelected = false) {
+    const list = await Api.listEnvironments(specId);
+    setEnvironments(list || []);
+    if (!(list || []).length) {
+      sessionStorage.removeItem(`testdata.env.${specId}`);
+      setEnvironmentId("");
+      setEnvDraft(true);
+      setEnvManageOpen(true);
+      setEnvForm({
+        name: "",
+        baseUrl: "",
+        authType: "NONE"
+      });
+      notifyEnvironment(null);
+      return null;
+    }
+    const nextId = preferredId && (list || []).some((environment) => environment.id === preferredId)
+      ? preferredId
+      : (list || [])[0]?.id || "";
+    setEnvironmentId(nextId);
+    setEnvDraft(false);
+    setEnvForm(envFormFrom(list || [], nextId, spec));
+    if (nextId) {
+      sessionStorage.setItem(`testdata.env.${specId}`, nextId);
+    } else {
+      sessionStorage.removeItem(`testdata.env.${specId}`);
+    }
+    const current = (list || []).find((environment) => environment.id === nextId) || null;
+    notifyEnvironment(current);
+    if (applySelected && nextId) {
+      const applied = await Api.applyEnvironment(specId, nextId);
+      const updated = await Api.getSpec(specId);
+      onSpecRenamed?.(updated);
+      return applied;
+    }
+    return current;
+  }
+
   async function applyEnvironment(nextId) {
     if (!nextId) {
       setEnvironmentId("");
       sessionStorage.removeItem(`testdata.env.${specId}`);
+      notifyEnvironment(null);
       return;
     }
     try {
@@ -145,26 +213,94 @@ export default function WorkspaceBar({
       const updated = await Api.getSpec(specId);
       onSpecRenamed?.(updated);
       toast(`Using environment ${applied.name}`);
+      setEnvForm(envFormFrom(environments, nextId, spec));
+      notifyEnvironment(environments.find((environment) => environment.id === nextId) || {
+        id: nextId,
+        name: applied.name,
+        authType: "NONE"
+      });
     } catch (error) {
       toast(error.message, true);
     }
   }
 
-  async function importEnvironment(file) {
-    if (!file) return;
+  function onEnvironmentMenu(nextId) {
+    if (nextId === "__new__") {
+      startNewEnvironment();
+      return;
+    }
+    if (!nextId) {
+      return;
+    }
+    if (envDraft) {
+      setEnvDraft(false);
+      setEnvForm(envFormFrom(environments, nextId, spec));
+    }
+    applyEnvironment(nextId);
+  }
+
+  function startNewEnvironment() {
+    setEnvDraft(true);
+    setEnvManageOpen(true);
+    setEnvForm({
+      name: "",
+      baseUrl: "",
+      authType: "NONE"
+    });
+  }
+
+  async function saveEnvironment() {
+    const name = envForm.name.trim();
+    const baseUrl = envForm.baseUrl.trim();
+    if (!name) {
+      toast("Enter an environment name", true);
+      return;
+    }
+    if (!baseUrl) {
+      toast("Enter a base URL", true);
+      return;
+    }
+    setSavingEnv(true);
     try {
-      const imported = await Api.importEnvironment(file, specId, true);
-      sessionStorage.setItem(`testdata.env.${imported.specId}`, imported.environmentId);
-      const [updated, next] = await Promise.all([
-        Api.getSpec(specId),
-        Api.listEnvironments(specId)
-      ]);
-      setEnvironments(next || []);
-      setEnvironmentId(imported.environmentId);
-      onSpecRenamed?.(updated);
-      toast(imported.applied
-        ? `Imported environment ${imported.name} and set base URL`
-        : `Imported environment ${imported.name}`);
+      if (envDraft || !environmentId) {
+        const created = await Api.createEnvironment(specId, {
+          name,
+          baseUrl,
+          authType: envForm.authType
+        });
+        await refreshEnvironments(created.id, true);
+        toast(`Created environment ${created.name}`);
+      } else {
+        const updated = await Api.updateEnvironment(specId, environmentId, {
+          name,
+          baseUrl,
+          authType: envForm.authType
+        });
+        await refreshEnvironments(updated.id, environmentId === sessionStorage.getItem(`testdata.env.${specId}`));
+        toast(`Saved environment ${updated.name}`);
+      }
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setSavingEnv(false);
+    }
+  }
+
+  async function removeEnvironment() {
+    if (!environmentId || envDraft) {
+      setEnvDraft(false);
+      setEnvForm(envFormFrom(environments, environmentId, spec));
+      return;
+    }
+    const current = selectedEnvironment();
+    if (!window.confirm(`Delete environment "${current?.name || environmentId}"?`)) {
+      return;
+    }
+    try {
+      await Api.deleteEnvironment(specId, environmentId);
+      sessionStorage.removeItem(`testdata.env.${specId}`);
+      await refreshEnvironments(null, false);
+      toast("Environment deleted");
     } catch (error) {
       toast(error.message, true);
     }
@@ -311,24 +447,96 @@ export default function WorkspaceBar({
             <button type="button" className="linkish" onClick={() => setEditingBaseUrl(true)}>
               Change
             </button>
-            <span>Environment</span>
+            <label htmlFor="environment-select">Environment</label>
             <select
               id="environment-select"
-              value={environmentId}
-              onChange={(event) => applyEnvironment(event.target.value)}
+              value={envDraft ? "__new__" : environmentId || environments[0]?.id || "__new__"}
+              onChange={(event) => onEnvironmentMenu(event.target.value)}
             >
-              <option value="">Spec URL</option>
               {environments.map((environment) => (
                 <option key={environment.id} value={environment.id}>
                   {environment.name}
                 </option>
               ))}
+              <option value="__new__">New environment…</option>
             </select>
-            <button type="button" className="linkish" onClick={() => envFileRef.current?.click()}>
-              Import env
-            </button>
           </div>
         )}
+        <details
+          className="plan-manage"
+          open={envManageOpen}
+          onToggle={(event) => setEnvManageOpen(event.currentTarget.open)}
+        >
+          <summary>Manage environment</summary>
+          <div className="env-manage">
+            <p className="hint">
+              {envDraft
+                ? "Enter a name and base URL, then Save."
+                : `Editing ${selectedEnvironment()?.name || "environment"}. Switch with the Environment menu.`}
+            </p>
+            <div className="field">
+              <label htmlFor="workspace-env-name">Name</label>
+              <input
+                id="workspace-env-name"
+                value={envForm.name}
+                placeholder="local, int, prod"
+                onChange={(event) => setEnvForm({ ...envForm, name: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    saveEnvironment();
+                  }
+                  if (event.key === "Escape" && envDraft) {
+                    removeEnvironment();
+                  }
+                }}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="workspace-env-base-url">Base URL</label>
+              <input
+                id="workspace-env-base-url"
+                value={envForm.baseUrl}
+                placeholder="https://int.example.com/employee-service"
+                onChange={(event) => setEnvForm({ ...envForm, baseUrl: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    saveEnvironment();
+                  }
+                }}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="workspace-env-auth">Auth type</label>
+              <select
+                id="workspace-env-auth"
+                value={envForm.authType}
+                onChange={(event) => setEnvForm({ ...envForm, authType: event.target.value })}
+              >
+                <option value="NONE">None</option>
+                <option value="BEARER">Bearer token</option>
+                <option value="BASIC">Basic</option>
+                <option value="API_KEY">API key</option>
+                <option value="OAUTH2">OAuth2</option>
+              </select>
+            </div>
+            <div className="env-manage-actions">
+              <button type="button" className="btn primary" onClick={saveEnvironment} disabled={savingEnv}>
+                {savingEnv ? "Saving…" : envDraft ? "Save new" : "Save"}
+              </button>
+              {envDraft ? (
+                <button type="button" className="linkish" onClick={removeEnvironment}>
+                  Cancel
+                </button>
+              ) : environmentId ? (
+                <button type="button" className="linkish" onClick={removeEnvironment}>
+                  Delete {selectedEnvironment()?.name || "environment"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </details>
         {editingBaseUrl ? (
           <div className="spec-label-edit">
             <div className="field">
@@ -407,17 +615,6 @@ export default function WorkspaceBar({
           </button>
         </details>
         <input
-          ref={envFileRef}
-          type="file"
-          accept=".json,application/json"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) importEnvironment(file);
-          }}
-        />
-        <input
           ref={fileRef}
           type="file"
           accept=".json,.yaml,.yml"
@@ -431,4 +628,20 @@ export default function WorkspaceBar({
       </div>
     </header>
   );
+}
+
+function envFormFrom(list, selectedId, spec) {
+  const current = (list || []).find((environment) => environment.id === selectedId);
+  if (current) {
+    return {
+      name: current.name || "",
+      baseUrl: current.baseUrl || "",
+      authType: current.authType || "NONE"
+    };
+  }
+  return {
+    name: "local",
+    baseUrl: spec?.baseUrl || "",
+    authType: "NONE"
+  };
 }

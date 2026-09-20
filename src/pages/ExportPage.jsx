@@ -122,11 +122,11 @@ export default function ExportPage() {
           />
         </div>
         <div className="card">
-          <h3>Environment</h3>
+          <h3>Environment file (CI)</h3>
           <p className="hint">
-            Downloads <code>testdata.studio.environment/v1</code> with <code>{"{{baseUrl}}"}</code> values
-            and <code>{"${ENV_VAR}"}</code> auth placeholders — never session tokens. Import applies
-            <code>values.baseUrl</code> to this spec. Try auth stays on the case page.
+            Create and edit environments in the workspace bar. Download here for git or TestNG
+            (<code>automation.environment-file</code>). Auth is stored as <code>{"${ENV_VAR}"}</code>
+            placeholders — never session tokens. Import is only for a file from another machine.
           </p>
           <div className="field">
             <label>Environment name</label>

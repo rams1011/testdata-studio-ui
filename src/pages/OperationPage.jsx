@@ -7,7 +7,7 @@ import ExtractsPicker from "../components/ExtractsPicker";
 import ExtractValueField, { PlanExtractsProvider } from "../components/ExtractValueField";
 import ImportCurlModal from "../components/ImportCurlModal";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
-import AuthSettings, { emptyAuth, useSpecAuth } from "../components/AuthSettings";
+import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
 import LastRunsStrip from "../components/LastRunsStrip";
 import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
@@ -22,7 +22,7 @@ import { applyCurlImport } from "../curlImport";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
-  const { spec, planId, operations, importCurlAsCase, deleteManualOperation } = useOutletContext();
+  const { spec, planId, operations, importCurlAsCase, deleteManualOperation, runEnvironment } = useOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -136,20 +136,13 @@ export default function OperationPage() {
     if (!suggested || !suggested.type || suggested.type === "NONE") {
       return;
     }
-    setAuth((current) => {
-      if (current?.type && current.type !== "NONE") {
-        return current;
-      }
-      return {
-        ...emptyAuth(),
-        ...current,
-        type: suggested.type,
-        apiKeyName: suggested.apiKeyName || current?.apiKeyName || "X-API-Key",
-        apiKeyIn: suggested.apiKeyIn || current?.apiKeyIn || "header",
-        tokenUrl: suggested.tokenUrl || current?.tokenUrl || "",
-        grantType: suggested.grantType || current?.grantType || "client_credentials"
-      };
-    });
+    setAuth((current) => ({
+      ...current,
+      apiKeyName: current?.apiKeyName || suggested.apiKeyName || "X-API-Key",
+      apiKeyIn: current?.apiKeyIn || suggested.apiKeyIn || "header",
+      tokenUrl: current?.tokenUrl || suggested.tokenUrl || "",
+      grantType: current?.grantType || suggested.grantType || "client_credentials"
+    }));
   }, [operation?.key]);
 
   const paramGroups = useMemo(() => {
@@ -283,8 +276,22 @@ export default function OperationPage() {
     const saved = await Api.createCase(casePayload());
     setBoundCaseId(saved.id);
     upsertCase(saved);
-    markClean(form, requestBody);
     return saved.id;
+  }
+
+  async function commitRequestBody(nextBody, savedCaseId) {
+    setRequestBody(nextBody);
+    const id = savedCaseId || boundCaseId;
+    if (!id) {
+      return;
+    }
+    try {
+      const saved = await Api.updateCase(id, { ...casePayload(), requestBody: nextBody });
+      upsertCase(saved);
+      markClean(form, nextBody);
+    } catch (error) {
+      toast(error.message, true);
+    }
   }
 
   function casePayload() {
@@ -306,7 +313,11 @@ export default function OperationPage() {
   async function runCurrent() {
     setRunning("current");
     try {
-      const result = await Api.runDraft({ testCase: casePayload(), auth });
+      const result = await Api.runDraft({
+        caseId: boundCaseId || undefined,
+        testCase: casePayload(),
+        auth
+      });
       setRunResult(result);
       setHistoryKey((value) => value + 1);
       toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
@@ -387,7 +398,8 @@ export default function OperationPage() {
     return <div className="empty">Loading operation schema…</div>;
   }
 
-  const authCue = runResult && !runResult.passed && runResult.actualStatus === 401 && (auth?.type || "NONE") === "NONE";
+  const authCue = runResult && !runResult.passed && runResult.actualStatus === 401
+    && authCredentialsMissing(auth, runEnvironment?.authType);
 
   return (
     <PlanExtractsProvider extracts={extractOptions}>
@@ -452,7 +464,7 @@ export default function OperationPage() {
 
       <div className="grid">
         <div>
-          <AuthSettings auth={auth} onChange={setAuth} specAuth={operation.auth} />
+          <AuthSettings auth={auth} onChange={setAuth} specAuth={operation.auth} environment={runEnvironment} />
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Test case</h3>
@@ -533,6 +545,7 @@ export default function OperationPage() {
                 resetKey={`${operationKey}-${caseId || "new"}`}
                 caseId={boundCaseId}
                 onEnsureCase={ensureCase}
+                onFileCommitted={commitRequestBody}
                 schema={operation.requestBody.jsonSchema}
                 value={requestBody}
                 onChange={setRequestBody}
