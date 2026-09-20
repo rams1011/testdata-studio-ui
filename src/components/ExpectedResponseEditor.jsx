@@ -27,14 +27,6 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
     return (
       <div className="field expected-response">
         <div className="empty">This operation has no response body schema.</div>
-        <textarea
-          className="body-json"
-          value={blankNa(value)}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="Optional. Leave blank if you only check status."
-          spellCheck={false}
-          aria-label={xml ? "Expected response XML" : "Expected response JSON"}
-        />
       </div>
     );
   }
@@ -65,12 +57,6 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
       />
     </div>
   );
-}
-
-function blankNa(value) {
-  if (value == null) return "";
-  const text = String(value).trim();
-  return text.toUpperCase() === "NA" ? "" : value;
 }
 
 function parseExpected(value, schema, xml) {
