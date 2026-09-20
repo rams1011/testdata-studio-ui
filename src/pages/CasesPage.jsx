@@ -157,19 +157,6 @@ export default function CasesPage() {
     }
   }
 
-  async function exportPlan() {
-    try {
-      const downloaded = await Api.exportCases({
-        specId,
-        planId,
-        excelFileName: `${plan?.name || "plan"}.xlsx`
-      });
-      toast(`Downloaded ${downloaded.fileName}`);
-    } catch (error) {
-      toast(error.message, true);
-    }
-  }
-
   async function bulkEnabled(enabled) {
     if (!selectedIds.length) return;
     try {
@@ -222,7 +209,9 @@ export default function CasesPage() {
           </button>
           {cases.length ? (
             <>
-              <button type="button" className="btn" onClick={exportPlan}>Download Excel</button>
+              <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/export`)}>
+                Export
+              </button>
               <button type="button" className="btn primary" onClick={runPlan} disabled={!!running}>
                 {running === "plan" ? "Running…" : "Run plan"}
               </button>

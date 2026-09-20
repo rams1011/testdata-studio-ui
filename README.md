@@ -34,7 +34,7 @@ Open [http://localhost:5173](http://localhost:5173). The home page checks `GET /
 | Save / update / delete case | `POST` `PUT` `DELETE /api/testdata` |
 | Generate positive / negative cases | `POST /api/testdata/generate` |
 | Generate Smoke / Negative plans | `POST /api/testdata/generate-plans` |
-| Export Excel | `POST /api/testdata/export` |
+| Export collection | Choose **JSON** or **Excel** on Export, then download (`POST /api/testdata/export-collection` or `POST /api/testdata/export`; zip with `files/<caseId>/` when the plan has uploads) |
 | History | `GET` `DELETE /api/runs` |
 | List / create / update / apply / delete environments | `GET` `POST` `PUT` `DELETE /api/specs/{id}/environments` |
 
@@ -64,7 +64,7 @@ Studio seeds a `local` environment from the spec URL the first time you open a s
 
 ### Export and the runner
 
-On **Export**, **Download environment** writes `testdata.studio.environment/v1` JSON, for example `employee-service.local.environment.json`:
+On **Export**, pick a **Collection type** and download that plan as JSON (`testdata.studio.collection/v1`) or Excel. **Download environment** writes the environment selected in the workspace bar as `testdata.studio.environment/v1` JSON, for example `employee-service.local.environment.json`:
 
 ```json
 {

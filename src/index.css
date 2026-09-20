@@ -594,7 +594,9 @@ a { color: inherit; text-decoration: none; }
 }
 .export-grid {
     display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 18px;
+    align-items: start;
 }
 .card {
     background: var(--panel);
