@@ -59,7 +59,8 @@ Studio seeds a `local` environment from the spec URL the first time you open a s
 | **Environment** menu | Switches the active host **and** the case list. Choosing `int` **applies** that environment: the spec Base URL becomes the int URL, and saved cases that still used the previous spec URL are rewritten. Cases with a custom URL are left as-is. |
 | **New environment…** | Opens a blank form. Enter a name and base URL, then **Save new**. That creates the environment and switches to it. New cases you save belong to it. |
 | **Manage environment** | Edits the selected environment’s name, base URL, and auth type. **Save** writes the record and keeps that environment’s cases (a rename from `local` to `dev` does not drop them). If that environment is the one currently applied, Save also re-applies the URL. **Auth type** also chooses which credential fields **Run authentication** shows. |
-| **Delete {name}** | Removes the environment and cases that exist only in it. Shared leftover cases (no environment stamp) stay. The spec Base URL is not reverted. |
+| **Delete {name}** | Removes the environment and cases that exist only in it. Unstamped leftover cases stay unless you delete them from that environment (they are then stamped onto the remaining environments). The spec Base URL is not reverted. |
+| **Duplicate environment** | Copies host, auth, and cases that belong only to the selected environment. |
 | **Base URL · Change** | Edits the spec host without creating an environment. Same case-rewrite rule as apply. |
 
 On a saved case, **Duplicate into {environment}** creates a **new** case in the other environment (new id, copied request files). It does not overlay data onto a shared id.
@@ -68,7 +69,7 @@ On a saved case, **Duplicate into {environment}** creates a **new** case in the 
 
 ### Export and the runner
 
-On **Export**, pick a **Collection type** and download that plan as JSON (`testdata.studio.collection/v1`) or Excel. Cases in the file include `environments: ["int"]` when they belong to that host. **Download environment** writes the environment selected in the workspace bar as `testdata.studio.environment/v1` JSON, for example `employee-service.local.environment.json`:
+On **Export**, pick a **Collection type** and download the selected plan **for the current environment** as JSON (`testdata.studio.collection/v1`) or Excel. Each case is stamped `environments: ["int"]` when it belongs to that host. **Download environment** writes host and auth only (no leftover `cases{}` overlays), for example `employee-service.local.environment.json`:
 
 ```json
 {
@@ -80,7 +81,7 @@ On **Export**, pick a **Collection type** and download that plan as JSON (`testd
 }
 ```
 
-Keep the collection (the cases) and swap environment files in CI for host and auth. Cases with `environments: ["int"]` run only when that environment file’s `name` is `int`. Legacy `cases{}` overlays in an environment file still apply on run until you save the case in Studio.
+Export once per environment (or filter at run time). Cases with `environments: ["int"]` run only when that environment file’s `name` is `int`. The runner requires `automation.environment-file` when any case has membership. Legacy `cases{}` overlays in an old environment file still apply on run until you save the case in Studio.
 
 ```properties
 automation.datasource.type=collection

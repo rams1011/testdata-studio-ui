@@ -7,7 +7,6 @@ import WorkspaceBar from "../components/WorkspaceBar";
 import AddApiModal from "../components/AddApiModal";
 import { useToast } from "../components/Toast";
 import { operationRequestFromCurl } from "../curlImport";
-import { visibleInEnvironment } from "../envScope";
 
 function planStorageKey(specId) {
   return `testdata.plan.${specId}`;
@@ -215,10 +214,6 @@ export default function StudioLayout() {
     navigate("/login", { replace: true });
   }
 
-  const visibleOperations = useMemo(
-    () => (operations || []).filter((operation) => visibleInEnvironment(operation.environmentNames, runEnvironment?.name)),
-    [operations, runEnvironment?.name]
-  );
   const caseCounts = useMemo(() => {
     const counts = {};
     cases.forEach((item) => {
@@ -239,7 +234,7 @@ export default function StudioLayout() {
       {ready ? (
         <Sidebar
           spec={spec}
-          operations={visibleOperations}
+          operations={operations}
           caseCounts={caseCounts}
           search={search}
           onSearch={setSearch}
@@ -277,7 +272,7 @@ export default function StudioLayout() {
           {ready ? (
             <Outlet context={{
               spec,
-              operations: visibleOperations,
+              operations,
               allOperations: operations,
               plans,
               plan,
@@ -302,7 +297,6 @@ export default function StudioLayout() {
       </div>
       {addApiOpen ? (
         <AddApiModal
-          specId={specId}
           onClose={() => setAddApiOpen(false)}
           onSave={saveManualOperation}
         />

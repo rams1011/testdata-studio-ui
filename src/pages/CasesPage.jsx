@@ -165,7 +165,7 @@ export default function CasesPage() {
     try {
       await Promise.all(selectedIds.map((id) => {
         const item = cases.find((row) => row.id === id);
-        return item ? Api.updateCase(id, caseUpdate(item, { enabled })) : null;
+        return item ? Api.updateCase(id, caseUpdate(item, { enabled }, runEnvironment?.id)) : null;
       }));
       setSelected({});
       await refresh();
@@ -181,7 +181,7 @@ export default function CasesPage() {
       return;
     }
     try {
-      await Promise.all(selectedIds.map((id) => Api.deleteCase(id)));
+      await Promise.all(selectedIds.map((id) => Api.deleteCase(id, runEnvironment?.id)));
       setSelected({});
       await refresh();
       toast("Deleted selected cases");
@@ -247,7 +247,7 @@ export default function CasesPage() {
           <p className="empty" style={{ paddingTop: 0 }}>
             {spec?.manual && !operations.length
               ? "Add a REST API by method and path, then save a test case. Curl also creates the API if it is missing."
-              : "Create one happy-path case per operation. Existing case names are skipped."}
+              : "Create one happy-path case per operation. Existing case names in this environment are skipped."}
           </p>
           {spec?.manual && !operations.length ? null : (
           <label className="check">
@@ -397,7 +397,7 @@ export default function CasesPage() {
   );
 }
 
-function caseUpdate(item, patch) {
+function caseUpdate(item, patch, environmentId) {
   return {
     specId: item.specId,
     planId: item.planId,
@@ -417,7 +417,7 @@ function caseUpdate(item, patch) {
     maxResponseTimeMs: item.maxResponseTimeMs,
     contentType: item.contentType,
     baseUrl: item.baseUrl,
-    environments: item.environments,
+    environmentId,
     ...patch
   };
 }

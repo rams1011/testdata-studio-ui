@@ -9,9 +9,9 @@ const COLLECTION_TYPES = {
     downloadLabel: "Download collection",
     hint: (planName) => (
       <>
-        Downloads <code>testdata.studio.collection/v1</code> for {planName}.
-        Cases are ordered so extract producers run first. If the plan has uploads, you get a zip with
-        the JSON plus <code>files/&lt;caseId&gt;/</code>. Import upserts by case id and creates a missing plan.
+        Downloads <code>testdata.studio.collection/v1</code> for {planName} in the selected
+        environment. Cases are ordered so extract producers run first. If the plan has uploads, you get a zip with
+        the JSON plus <code>files/&lt;caseId&gt;/</code>. Import upserts by case id into this environment.
       </>
     )
   },
@@ -20,7 +20,7 @@ const COLLECTION_TYPES = {
     downloadLabel: "Download Excel",
     hint: (planName) => (
       <>
-        Downloads api-automation Excel for {planName} only. Request bodies are
+        Downloads api-automation Excel for {planName} in the selected environment. Request bodies are
         written into the RequestBody column. If the plan has uploads, you get a zip with the workbook
         plus <code>files/&lt;caseId&gt;/</code> — the same packaging as collection JSON. Point TestNG at that zip
         (<code>automation.source.data-file</code>).
@@ -50,8 +50,8 @@ export default function ExportPage() {
   async function downloadCollection() {
     try {
       const downloaded = collectionType === "excel"
-        ? await Api.exportCases({ specId, planId, excelFileName })
-        : await Api.exportCollection({ specId, planId });
+        ? await Api.exportCases({ specId, planId, excelFileName, environmentId: runEnvironment?.id })
+        : await Api.exportCollection({ specId, planId, environmentId: runEnvironment?.id });
       toast(`Downloaded ${downloaded.fileName}`);
     } catch (error) {
       toast(error.message, true);
@@ -61,7 +61,7 @@ export default function ExportPage() {
   async function importCollection(file) {
     if (!file) return;
     try {
-      const imported = await Api.importCollection(file, specId);
+      const imported = await Api.importCollection(file, specId, runEnvironment?.id);
       sessionStorage.setItem(`testdata.plan.${imported.specId}`, imported.planId);
       await reloadPlans(imported.planId);
       toast(importCollectionToast(imported));
@@ -110,8 +110,8 @@ export default function ExportPage() {
         <div>
           <h2>Export</h2>
           <p className="hint" style={{ marginTop: 6 }}>
-            Download the selected plan as JSON or Excel. Swap an environment file to
-            point the same collection at local vs int.
+            Download this plan for the selected environment as JSON or Excel. Use a
+            matching environment file in TestNG so only that environment’s cases run.
           </p>
         </div>
       </div>

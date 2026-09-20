@@ -289,6 +289,23 @@ export default function WorkspaceBar({
     }
   }
 
+  async function duplicateCurrentEnvironment() {
+    if (!environmentId || envDraft) {
+      return;
+    }
+    setSavingEnv(true);
+    try {
+      const created = await Api.duplicateEnvironment(specId, environmentId);
+      await refreshEnvironments(created.id, true);
+      onEnvironmentsChanged?.();
+      toast(`Duplicated environment to ${created.name} with its cases`);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setSavingEnv(false);
+    }
+  }
+
   async function removeEnvironment() {
     if (!environmentId || envDraft) {
       setEnvDraft(false);
@@ -476,7 +493,7 @@ export default function WorkspaceBar({
             <p className="hint">
               {envDraft
                 ? "Enter a name and base URL, then Save. Cases you add after switching to it belong to that environment."
-                : `Editing ${selectedEnvironment()?.name || "environment"}. Cases you save while it is selected belong to it.`}
+                : `Editing ${selectedEnvironment()?.name || "environment"}. Cases you save belong to it. Renaming keeps those cases. Duplicate copies this host, auth, and its cases.`}
             </p>
             <div className="field">
               <label htmlFor="workspace-env-name">Name</label>
@@ -534,9 +551,14 @@ export default function WorkspaceBar({
                   Cancel
                 </button>
               ) : environmentId ? (
-                <button type="button" className="linkish" onClick={removeEnvironment}>
-                  Delete {selectedEnvironment()?.name || "environment"}
-                </button>
+                <>
+                  <button type="button" className="btn" onClick={duplicateCurrentEnvironment} disabled={savingEnv}>
+                    Duplicate environment
+                  </button>
+                  <button type="button" className="linkish" onClick={removeEnvironment}>
+                    Delete {selectedEnvironment()?.name || "environment"}
+                  </button>
+                </>
               ) : null}
             </div>
           </div>

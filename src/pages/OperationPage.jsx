@@ -22,7 +22,7 @@ import { applyCurlImport } from "../curlImport";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
-  const { spec, planId, operations, importCurlAsCase, deleteManualOperation, runEnvironment, envEpoch, onEnvironmentsChanged } = useOutletContext();
+  const { spec, planId, operations, importCurlAsCase, deleteManualOperation, onSpecUpdated, runEnvironment, envEpoch, onEnvironmentsChanged } = useOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -370,6 +370,10 @@ export default function OperationPage() {
       });
       const target = environments.find((item) => item.id === duplicateTarget);
       sessionStorage.setItem(`testdata.env.${specId}`, duplicateTarget);
+      await Api.applyEnvironment(specId, duplicateTarget);
+      if (onSpecUpdated) {
+        onSpecUpdated(await Api.getSpec(specId));
+      }
       onEnvironmentsChanged?.();
       skipUnsavedPrompt.current = true;
       toast(`Created a copy in ${target?.name || "environment"}`);
@@ -415,7 +419,7 @@ export default function OperationPage() {
       return;
     }
     try {
-      await Api.deleteCase(id);
+      await Api.deleteCase(id, runEnvironment?.id);
       toast("Test case deleted");
       if (id === caseId) {
         navigate(`/s/${specId}/op/${encodeURIComponent(operationKey)}`);
@@ -490,7 +494,7 @@ export default function OperationPage() {
             <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
               New case
             </button>
-            {spec?.manual || operation.environmentNames?.length ? (
+            {spec?.manual ? (
               <button type="button" className="btn danger" onClick={removeApi}>
                 Remove API
               </button>
@@ -866,8 +870,7 @@ function formFromOperation(operation, spec) {
     pathParams: mapParams(operation.parameters, "path"),
     queryParams: mapParams(operation.parameters, "query"),
     headers: mapParams(operation.parameters, "header"),
-    cookieParams: mapParams(operation.parameters, "cookie"),
-    environments: operation.environmentNames
+    cookieParams: mapParams(operation.parameters, "cookie")
   };
 }
 

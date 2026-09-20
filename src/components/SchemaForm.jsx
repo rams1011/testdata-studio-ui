@@ -401,7 +401,7 @@ function FileField({ caseId, onEnsureCase, schema, path, name, required, value, 
         setError("Save the case before uploading a file.");
         return;
       }
-      const uploaded = await Api.uploadRequestFile(id, file, name || "file", environmentId);
+      const uploaded = await Api.uploadRequestFile(id, file, name || "file");
       const next = setPath(value, path, {
         fileId: uploaded.fileId,
         testCaseId: uploaded.testCaseId || id,

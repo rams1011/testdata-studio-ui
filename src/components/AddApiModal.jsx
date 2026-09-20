@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Api } from "../api";
-import EnvironmentScopeField from "./EnvironmentScopeField";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
-export default function AddApiModal({ specId, onClose, onSave }) {
+export default function AddApiModal({ onClose, onSave }) {
   const [method, setMethod] = useState("GET");
   const [path, setPath] = useState("/");
   const [summary, setSummary] = useState("");
@@ -13,8 +11,6 @@ export default function AddApiModal({ specId, onClose, onSave }) {
   const [headerNames, setHeaderNames] = useState("");
   const [hasRequestBody, setHasRequestBody] = useState(false);
   const [requestExample, setRequestExample] = useState("");
-  const [environments, setEnvironments] = useState([]);
-  const [scope, setScope] = useState(undefined);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const pathRef = useRef(null);
@@ -34,21 +30,6 @@ export default function AddApiModal({ specId, onClose, onSave }) {
       document.body.style.overflow = previousOverflow;
     };
   }, [onClose, saving]);
-
-  useEffect(() => {
-    if (!specId) {
-      return;
-    }
-    let cancelled = false;
-    Api.listEnvironments(specId)
-      .then((list) => {
-        if (!cancelled) setEnvironments(list || []);
-      })
-      .catch(() => {
-        if (!cancelled) setEnvironments([]);
-      });
-    return () => { cancelled = true; };
-  }, [specId]);
 
   function chooseMethod(next) {
     setMethod(next);
@@ -73,8 +54,7 @@ export default function AddApiModal({ specId, onClose, onSave }) {
         hasRequestBody,
         requestExample: hasRequestBody ? (requestExample.trim() || undefined) : undefined,
         queryNames: splitNames(queryNames),
-        headerNames: splitNames(headerNames),
-        environments: scope
+        headerNames: splitNames(headerNames)
       });
     } catch (err) {
       setError(err.message);
@@ -177,12 +157,6 @@ export default function AddApiModal({ specId, onClose, onSave }) {
             />
           </div>
         ) : null}
-        <EnvironmentScopeField
-          environments={environments}
-          value={scope}
-          onChange={setScope}
-          noun="API"
-        />
         {error ? <div className="status-banner down" style={{ marginTop: 12 }}>{error}</div> : null}
         <div className="actions" style={{ marginTop: 16, justifyContent: "flex-end" }}>
           <button type="button" className="btn primary" onClick={submit} disabled={saving}>
