@@ -1,0 +1,74 @@
+name: Deploy to Google Cloud
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+  REPOSITORY: ${{ vars.GCP_ARTIFACT_REPO || 'observability' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Image prefix
+        id: prefix
+        run: echo "value=${REGION}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${REPOSITORY}" >> "$GITHUB_OUTPUT"
+
+      - name: Studio API URL
+        id: api
+        run: |
+          if [ -n "${{ vars.STUDIO_API_URL }}" ]; then
+            echo "url=${{ vars.STUDIO_API_URL }}" >> "$GITHUB_OUTPUT"
+          else
+            url="$(gcloud run services describe testdata-studio --region="${REGION}" --format='value(status.url)')"
+            echo "url=${url}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push testdata-studio-ui
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.prefix.outputs.value }}/testdata-studio-ui:${{ github.sha }}
+            ${{ steps.prefix.outputs.value }}/testdata-studio-ui:latest
+          cache-from: type=gha,scope=testdata-studio-ui
+          cache-to: type=gha,mode=max,scope=testdata-studio-ui
+
+      - name: Deploy testdata-studio-ui to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        id: ui
+        with:
+          service: testdata-studio-ui
+          image: ${{ steps.prefix.outputs.value }}/testdata-studio-ui:${{ github.sha }}
+          region: ${{ env.REGION }}
+          flags: --port=8080 --allow-unauthenticated --cpu=1 --memory=256Mi --min-instances=0 --max-instances=2
+          env_vars: |
+            API_PROXY_TARGET=${{ steps.api.outputs.url }}
+
+      - name: Service URL
+        run: echo "Studio UI ${{ steps.ui.outputs.url }}"
