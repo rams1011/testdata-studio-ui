@@ -156,7 +156,7 @@ export default function Sidebar({
       <div className="side-foot">
         <NavLink to="/" className="btn ghost">All specs</NavLink>
         {canManage ? <NavLink to="/admin" className="btn ghost">Admin</NavLink> : null}
-        {canManageSubscriptions ? <NavLink to="/subscriptions" className="btn ghost">Subscriptions</NavLink> : null}
+        {canManageSubscriptions ? <NavLink to="/subscriptions" className="btn ghost">Plan</NavLink> : null}
         {onSignOut ? (
           <>
             {account?.email ? <div className="side-foot-user">{account.email}</div> : null}

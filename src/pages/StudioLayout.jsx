@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
-import { canManageMembers, isSaasAdmin, isWorkspaceReady, clearSession } from "../session";
+import { canManageMembers, isWorkspaceReady, clearSession } from "../session";
 import Sidebar, { reloadSpecToast } from "../components/Sidebar";
 import WorkspaceBar from "../components/WorkspaceBar";
 import AddApiModal from "../components/AddApiModal";
@@ -241,7 +241,7 @@ export default function StudioLayout() {
           onAddApi={() => setAddApiOpen(true)}
           account={session?.authenticated ? session.account : null}
           canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
-          canManageSubscriptions={Boolean(session?.saas) && isSaasAdmin(session)}
+          canManageSubscriptions={Boolean(session?.saas && session?.authenticated)}
           onSignOut={session?.saas && session?.authenticated ? signOut : null}
         />
       ) : (
