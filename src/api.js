@@ -214,12 +214,16 @@ export const Api = {
     });
   },
 
+  currentSubscription() {
+    return request("/api/saas/subscription");
+  },
+
   listSubscriptions() {
     return request("/api/saas/subscriptions");
   },
 
-  updateSubscription(tenantId, payload) {
-    return request(`/api/saas/subscriptions/${encodeURIComponent(tenantId)}`, {
+  updateSubscription(orgId, payload) {
+    return request(`/api/saas/subscriptions/${encodeURIComponent(orgId)}`, {
       method: "PUT",
       body: JSON.stringify(payload)
     });

@@ -164,8 +164,8 @@ export default function AdminPage() {
           <Link className="btn" to="/">Back to specs</Link>
         </div>
         <div className="card">
-          <h3>This workspace is not enabled</h3>
-          <p className="hint">A SaaS admin must mark it ready before you can manage members.</p>
+          <h3>This organization is read-only</h3>
+          <p className="hint">Activate the organization plan before inviting people to this workspace.</p>
         </div>
       </div>
     );

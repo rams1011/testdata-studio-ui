@@ -4,11 +4,67 @@ import { Api } from "../api";
 import { clearSession, isSaasAdmin, saveSession } from "../session";
 import { useToast } from "../components/Toast";
 
+function usage(used, limit) {
+  return `${used ?? 0} / ${limit ?? 0}`;
+}
+
+function planLabel(plan) {
+  if (!plan) return "None";
+  return plan.charAt(0).toUpperCase() + plan.slice(1);
+}
+
+function statusLabel(item) {
+  if (item?.writable) return item.status === "trial" ? "Trial" : "Active";
+  if (item?.status === "trial") return "Trial ended";
+  if (item?.status === "past_due") return "Past due";
+  if (item?.status === "canceled") return "Canceled";
+  if (item?.status === "suspended") return "Suspended";
+  return item?.status || "Unknown";
+}
+
+function UsageCard({ item }) {
+  if (!item) return null;
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>{item.name}</h3>
+        <span className={`member-you ${item.writable ? "ready-pill" : ""}`}>
+          {planLabel(item.plan)} · {statusLabel(item)}
+        </span>
+      </div>
+      <p className="hint">
+        {item.ownerEmail || "Organization subscription"}
+        {item.ownerName ? ` · ${item.ownerName}` : ""}
+        {item.trialEndsAt && item.status === "trial" ? ` · Trial ends ${new Date(item.trialEndsAt).toLocaleDateString()}` : ""}
+      </p>
+      <div className="member-list">
+        <div className="member-row">
+          <div className="member-copy">Workspaces</div>
+          <div className="hint">{usage(item.workspacesUsed, item.workspaceLimit)}</div>
+        </div>
+        <div className="member-row">
+          <div className="member-copy">Seats</div>
+          <div className="hint">{usage(item.seatsUsed, item.seatLimit)}</div>
+        </div>
+        <div className="member-row">
+          <div className="member-copy">Specs</div>
+          <div className="hint">{usage(item.specsUsed, item.specLimit)}</div>
+        </div>
+        <div className="member-row">
+          <div className="member-copy">Runs this month</div>
+          <div className="hint">{usage(item.runsUsed, item.runLimitMonth)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SubscriptionsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [session, setSession] = useState(null);
   const [subscriptions, setSubscriptions] = useState([]);
+  const [mine, setMine] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
 
@@ -24,12 +80,21 @@ export default function SubscriptionsPage() {
           saveSession(next.token || undefined, next.tenant.id);
         }
         setSession(next);
-        if (!next?.saas || !next?.authenticated || !next?.saasAdmin) {
+        if (!next?.saas || !next?.authenticated) {
           return;
         }
-        return Api.listSubscriptions()
-          .then((list) => {
-            if (!cancelled) setSubscriptions(list || []);
+        setMine(next.subscription || null);
+        const loadMine = next.subscription
+          ? Promise.resolve(next.subscription)
+          : Api.currentSubscription().catch(() => null);
+        const loadAll = next.saasAdmin
+          ? Api.listSubscriptions()
+          : Promise.resolve([]);
+        return Promise.all([loadMine, loadAll])
+          .then(([current, list]) => {
+            if (cancelled) return;
+            if (current) setMine(current);
+            setSubscriptions(list || []);
           })
           .catch((error) => {
             if (!cancelled) toast(error.message, true);
@@ -47,15 +112,33 @@ export default function SubscriptionsPage() {
   }, [toast]);
 
   async function setReady(item, ready) {
-    setBusyId(item.tenantId);
+    setBusyId(item.orgId);
     try {
-      const updated = await Api.updateSubscription(item.tenantId, { ready });
+      const updated = await Api.updateSubscription(item.orgId, { ready });
       setSubscriptions((current) => current.map((row) => (
-        row.tenantId === updated.tenantId ? updated : row
+        row.orgId === updated.orgId ? updated : row
       )));
+      if (mine?.orgId === updated.orgId) {
+        setMine(updated);
+      }
       toast(ready
-        ? `${item.name} is ready for use`
-        : `${item.name} is disabled`);
+        ? `${item.name} is active`
+        : `${item.name} is suspended`);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function setPlan(item, plan) {
+    setBusyId(item.orgId);
+    try {
+      const updated = await Api.updateSubscription(item.orgId, { plan, status: "active" });
+      setSubscriptions((current) => current.map((row) => (
+        row.orgId === updated.orgId ? updated : row
+      )));
+      toast(`${item.name} is now on the ${planLabel(plan)} plan`);
     } catch (error) {
       toast(error.message, true);
     } finally {
@@ -75,7 +158,7 @@ export default function SubscriptionsPage() {
   if (loading) {
     return (
       <div className="hero">
-        <h1>Subscriptions</h1>
+        <h1>Plan</h1>
         <p>Loading…</p>
       </div>
     );
@@ -89,81 +172,96 @@ export default function SubscriptionsPage() {
     return <Navigate to="/login" replace />;
   }
 
-  if (!admin) {
-    return (
-      <div className="hero">
-        <div className="hero-head">
-          <h1>Subscriptions</h1>
-          <Link className="btn" to="/">Back to specs</Link>
-        </div>
-        <div className="card">
-          <h3>SaaS admin access required</h3>
-          <p className="hint">Only a SaaS admin can enable or disable customer workspaces.</p>
-        </div>
-      </div>
-    );
-  }
-
-  const pending = subscriptions.filter((item) => !item.ready).length;
+  const waiting = subscriptions.filter((item) => !item.writable).length;
 
   return (
     <div className="hero admin-page">
       <div className="hero-head">
-        <h1>Subscriptions</h1>
+        <h1>{admin ? "Subscriptions" : "Plan"}</h1>
         <div className="hero-actions">
           <Link className="btn" to="/">Back to specs</Link>
           <button type="button" className="btn" onClick={signOut}>Sign out</button>
         </div>
       </div>
       <p>
-        Enable a workspace when that customer is ready to use Studio.
-        Until you mark it ready, nobody in that workspace can open specs.
+        {admin
+          ? "Organizations own the subscription. Workspaces under an organization share that plan, seats, and usage."
+          : "Your organization owns this plan. Every workspace in the organization shares these limits."}
       </p>
-      <div className="card">
-        <div className="card-head">
-          <h3>Workspaces</h3>
-          <span className="hint">{pending} waiting · {subscriptions.length} total</span>
-        </div>
-        <div className="member-list">
-          {subscriptions.length === 0 ? (
-            <div className="hint">No customer workspaces yet.</div>
-          ) : subscriptions.map((item) => (
-            <div key={item.tenantId} className="member-row">
-              <div className="member-copy">
-                <div className="member-name">
-                  {item.name}
-                  <span className={`member-you ${item.ready ? "ready-pill" : ""}`}>
-                    {item.ready ? "Ready" : "Pending"}
-                  </span>
+
+      <UsageCard item={mine} />
+
+      {admin ? (
+        <div className="card">
+          <div className="card-head">
+            <h3>Organizations</h3>
+            <span className="hint">{waiting} not writable · {subscriptions.length} total</span>
+          </div>
+          <div className="member-list">
+            {subscriptions.length === 0 ? (
+              <div className="hint">No customer organizations yet.</div>
+            ) : subscriptions.map((item) => (
+              <div key={item.orgId} className="member-row">
+                <div className="member-copy">
+                  <div className="member-name">
+                    {item.name}
+                    <span className={`member-you ${item.writable ? "ready-pill" : ""}`}>
+                      {planLabel(item.plan)} · {statusLabel(item)}
+                    </span>
+                  </div>
+                  <div className="hint">
+                    {item.ownerEmail || "No owner"}
+                    {item.ownerName ? ` · ${item.ownerName}` : ""}
+                    {` · ${usage(item.workspacesUsed, item.workspaceLimit)} workspaces`}
+                    {` · ${usage(item.seatsUsed, item.seatLimit)} seats`}
+                  </div>
                 </div>
-                <div className="hint">
-                  {item.ownerEmail || "No owner"}
-                  {item.ownerName ? ` · ${item.ownerName}` : ""}
+                <div className="hero-actions">
+                  {item.plan !== "team" ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={Boolean(busyId)}
+                      onClick={() => setPlan(item, "team")}
+                    >
+                      Team
+                    </button>
+                  ) : null}
+                  {item.plan !== "enterprise" ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={Boolean(busyId)}
+                      onClick={() => setPlan(item, "enterprise")}
+                    >
+                      Enterprise
+                    </button>
+                  ) : null}
+                  {item.writable ? (
+                    <button
+                      type="button"
+                      className="btn danger"
+                      disabled={Boolean(busyId)}
+                      onClick={() => setReady(item, false)}
+                    >
+                      Suspend
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn primary"
+                      disabled={Boolean(busyId)}
+                      onClick={() => setReady(item, true)}
+                    >
+                      Activate
+                    </button>
+                  )}
                 </div>
               </div>
-              {item.ready ? (
-                <button
-                  type="button"
-                  className="btn danger"
-                  disabled={Boolean(busyId)}
-                  onClick={() => setReady(item, false)}
-                >
-                  Disable
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={Boolean(busyId)}
-                  onClick={() => setReady(item, true)}
-                >
-                  Enable
-                </button>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

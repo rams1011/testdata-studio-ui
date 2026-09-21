@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { API_DISPLAY, Api } from "../api";
-import { canManageMembers, clearSession, isSaasAdmin, isWorkspaceReady, saveSession } from "../session";
+import { canManageMembers, clearSession, isWorkspaceReady, saveSession, subscriptionBanner } from "../session";
 import { useToast } from "../components/Toast";
 import LabelField, { specLabel, uniqueLabels } from "../components/LabelField";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
@@ -44,10 +44,6 @@ export default function LoadSpecPage() {
         }
         if (session?.tenant?.id) {
           saveSession(session.token || undefined, session.tenant.id);
-        }
-        if (saas && session?.authenticated && session.tenant?.ready === false) {
-          setBackend({ status: "ok", config, specs: [], session, saas });
-          return;
         }
         const specs = await Api.listSpecs();
         if (!cancelled) {
@@ -268,10 +264,10 @@ export default function LoadSpecPage() {
   const saasOn = Boolean(backend.saas || backend.session?.saas);
   const signedIn = saasOn && Boolean(backend.session?.authenticated || backend.session?.account);
   const saasLocked = saasOn && !signedIn;
-  const workspacePending = signedIn && backend.session?.tenant?.ready === false;
+  const workspacePending = signedIn && !isWorkspaceReady(backend.session);
   const studioOpen = signedIn && isWorkspaceReady(backend.session);
   const showAdmin = studioOpen && canManageMembers(backend.session);
-  const showSubscriptions = signedIn && isSaasAdmin(backend.session);
+  const showSubscriptions = signedIn;
 
   return (
     <div className="hero">
@@ -279,7 +275,7 @@ export default function LoadSpecPage() {
         <h1>Test Data Studio</h1>
         {signedIn ? (
           <div className="hero-actions">
-            {showSubscriptions ? <Link className="btn" to="/subscriptions">Subscriptions</Link> : null}
+            {showSubscriptions ? <Link className="btn" to="/subscriptions">Plan</Link> : null}
             {showAdmin ? <Link className="btn" to="/admin">Admin</Link> : null}
             <button type="button" className="btn" onClick={signOut}>Sign out</button>
           </div>
@@ -300,11 +296,11 @@ export default function LoadSpecPage() {
           >
             {(backend.session.tenants || []).map((tenant) => (
               <option key={tenant.id} value={tenant.id}>
-                {tenant.name}{tenant.ready === false ? " (pending)" : ""}
+                {tenant.name}{tenant.ready === false ? " (read-only)" : ""}
               </option>
             ))}
           </select>
-          <button type="button" className="btn" onClick={addWorkspace}>New workspace</button>
+          <button type="button" className="btn" disabled={!studioOpen} onClick={addWorkspace}>New workspace</button>
           {backend.session.account?.email ? (
             <span className="hint">{backend.session.account.email}</span>
           ) : null}
@@ -323,8 +319,10 @@ export default function LoadSpecPage() {
         )}
         {backend.status === "ok" && workspacePending && (
           <>
-            {backend.session.tenant?.name || "This workspace"} is not enabled yet.
-            A SaaS admin must mark it ready before anyone can use Studio.
+            {subscriptionBanner(backend.session)
+              || `${backend.session.tenant?.name || "This workspace"} is read-only until the organization plan is active.`}
+            {" "}
+            <Link to="/subscriptions">View plan</Link>
           </>
         )}
         {backend.status === "ok" && !saasLocked && !workspacePending && (
@@ -339,7 +337,7 @@ export default function LoadSpecPage() {
         )}
       </div>
 
-      {saasLocked || workspacePending ? null : (
+      {saasLocked ? null : (
       <div className="card home-specs">
         <div className="card-head">
           <h3>Your specs</h3>
@@ -356,7 +354,7 @@ export default function LoadSpecPage() {
             <button
               type="button"
               className="btn"
-              disabled={apiDown || backend.status === "checking" || loading}
+              disabled={workspacePending || apiDown || backend.status === "checking" || loading}
               onClick={() => importFileRef.current?.click()}
             >
               Import collection
@@ -364,7 +362,7 @@ export default function LoadSpecPage() {
             <button
               type="button"
               className="btn"
-              disabled={apiDown || backend.status === "checking"}
+              disabled={workspacePending || apiDown || backend.status === "checking"}
               onClick={() => {
                 setSource("rest");
                 setAdding(true);
@@ -376,7 +374,7 @@ export default function LoadSpecPage() {
               ref={addButtonRef}
               type="button"
               className="btn primary"
-              disabled={apiDown || backend.status === "checking"}
+              disabled={workspacePending || apiDown || backend.status === "checking"}
               onClick={() => {
                 setSource("url");
                 setAdding(true);
@@ -430,7 +428,7 @@ export default function LoadSpecPage() {
                       <button
                         type="button"
                         className="btn"
-                        disabled={!!reloadingId || !!deletingId}
+                        disabled={workspacePending || !!reloadingId || !!deletingId}
                         onClick={(event) => startReload(spec, event)}
                       >
                         {reloadingId === spec.specId ? "Updating…" : "Update spec"}
@@ -439,7 +437,7 @@ export default function LoadSpecPage() {
                       <button
                         type="button"
                         className="btn danger"
-                        disabled={!!reloadingId || !!deletingId}
+                        disabled={workspacePending || !!reloadingId || !!deletingId}
                         onClick={(event) => deleteSpec(spec, event)}
                       >
                         {deletingId === spec.specId ? "Deleting…" : "Delete"}

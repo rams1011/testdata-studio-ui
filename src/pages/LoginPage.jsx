@@ -22,10 +22,8 @@ export default function LoginPage() {
         ? await Api.register({ email, password, name, workspace })
         : await Api.login({ email, password });
       saveSession(session.token, session.tenant?.id);
-      if (session.tenant?.ready === false) {
-        toast(`${session.tenant?.name || "This workspace"} is waiting for a SaaS admin to enable it`);
-      } else if (mode === "register") {
-        toast(`Workspace ${session.tenant?.name} was created and is waiting for a SaaS admin to enable it`);
+      if (mode === "register") {
+        toast(`Organization ${session.organization?.name || session.tenant?.name} is on a 14-day trial`);
       } else {
         toast(`Signed in to ${session.tenant?.name}`);
       }
@@ -42,7 +40,7 @@ export default function LoginPage() {
       <h1>Test Data Studio</h1>
       <p>Sign in to a workspace. Specs, collections, and environments stay private to that tenant.</p>
       <form className="card login-card" onSubmit={submit}>
-        <h3>{mode === "register" ? "Create a workspace" : "Sign in"}</h3>
+        <h3>{mode === "register" ? "Create an organization" : "Sign in"}</h3>
         {mode === "register" ? (
           <div className="field">
             <label htmlFor="signup-name">Your name</label>
@@ -67,12 +65,12 @@ export default function LoginPage() {
             <input id="signup-workspace" value={workspace}
               onChange={(event) => setWorkspace(event.target.value)}
               placeholder="e.g. Acme QA" />
-            <div className="hint">Each customer gets an isolated workspace. A SaaS admin must enable it before Studio can be used.</div>
+            <div className="hint">Creates your organization, a workspace, and a 14-day trial you can use immediately.</div>
           </div>
         ) : null}
         <div className="actions">
           <button type="submit" className="btn primary" disabled={busy}>
-            {busy ? "Please wait…" : mode === "register" ? "Create workspace" : "Sign in"}
+            {busy ? "Please wait…" : mode === "register" ? "Start trial" : "Sign in"}
           </button>
         </div>
         <p className="hint">
