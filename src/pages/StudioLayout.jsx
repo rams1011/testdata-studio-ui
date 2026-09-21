@@ -29,6 +29,7 @@ export default function StudioLayout() {
   const [error, setError] = useState(null);
   const [cases, setCases] = useState([]);
   const [envEpoch, setEnvEpoch] = useState(0);
+  const [runEnvironment, setRunEnvironment] = useState(null);
   const [session, setSession] = useState(null);
   const [addApiOpen, setAddApiOpen] = useState(false);
 
@@ -101,7 +102,7 @@ export default function StudioLayout() {
       return;
     }
     let cancelled = false;
-    Api.listCases(specId, undefined, planId)
+    Api.listCases(specId, undefined, planId, runEnvironment?.id)
       .then((next) => {
         if (!cancelled) setCases(next || []);
       })
@@ -109,7 +110,7 @@ export default function StudioLayout() {
         if (!cancelled) setCases([]);
       });
     return () => { cancelled = true; };
-  }, [specId, planId, location.pathname]);
+  }, [specId, planId, location.pathname, runEnvironment?.id]);
 
   function selectPlan(nextPlanId) {
     setPlanId(nextPlanId);
@@ -128,7 +129,7 @@ export default function StudioLayout() {
 
   async function reloadCases() {
     if (!specId || !planId) return [];
-    const next = await Api.listCases(specId, undefined, planId);
+    const next = await Api.listCases(specId, undefined, planId, runEnvironment?.id);
     setCases(next || []);
     return next || [];
   }
@@ -156,7 +157,7 @@ export default function StudioLayout() {
 
   async function importCurlAsCase(parsed, match) {
     let operation = match?.operation;
-    if (!operation && spec?.manual) {
+    if (!operation) {
       operation = await addManualOperation(operationRequestFromCurl(parsed, spec));
     }
     if (!operation) {
@@ -237,7 +238,7 @@ export default function StudioLayout() {
           caseCounts={caseCounts}
           search={search}
           onSearch={setSearch}
-          onAddApi={spec.manual ? () => setAddApiOpen(true) : null}
+          onAddApi={() => setAddApiOpen(true)}
           account={session?.authenticated ? session.account : null}
           canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
           canManageSubscriptions={Boolean(session?.saas) && isSaasAdmin(session)}
@@ -260,9 +261,11 @@ export default function StudioLayout() {
             onSelectPlan={selectPlan}
             onPlansChange={reloadPlans}
             onReloadSpec={reloadSpec}
-            onAddApi={spec.manual ? () => setAddApiOpen(true) : null}
+            onAddApi={() => setAddApiOpen(true)}
             onSpecRenamed={handleSpecUpdated}
             envEpoch={envEpoch}
+            onEnvironmentChange={setRunEnvironment}
+            onEnvironmentsChanged={() => setEnvEpoch((current) => current + 1)}
           />
         ) : null}
         <main className="main">
@@ -270,6 +273,7 @@ export default function StudioLayout() {
             <Outlet context={{
               spec,
               operations,
+              allOperations: operations,
               plans,
               plan,
               planId,
@@ -278,19 +282,24 @@ export default function StudioLayout() {
               reloadCases,
               reloadOperations,
               caseCounts,
-              onAddApi: spec.manual ? () => setAddApiOpen(true) : null,
+              onAddApi: () => setAddApiOpen(true),
               importCurlAsCase,
               deleteManualOperation,
               onSpecUpdated: handleSpecUpdated,
-              onEnvironmentsChanged: () => setEnvEpoch((current) => current + 1)
+              onEnvironmentsChanged: () => setEnvEpoch((current) => current + 1),
+              envEpoch,
+              runEnvironment
             }} />
           ) : (
             <div className="empty">Loading spec…</div>
           )}
         </main>
       </div>
-      {addApiOpen && spec?.manual ? (
-        <AddApiModal onClose={() => setAddApiOpen(false)} onSave={saveManualOperation} />
+      {addApiOpen ? (
+        <AddApiModal
+          onClose={() => setAddApiOpen(false)}
+          onSave={saveManualOperation}
+        />
       ) : null}
     </div>
   );

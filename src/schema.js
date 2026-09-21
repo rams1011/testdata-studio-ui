@@ -35,6 +35,87 @@ export function hasResponseBodySchema(response) {
   return type === "JSON";
 }
 
+export function isFileRef(value) {
+  return value != null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && typeof value.fileId === "string"
+    && value.fileId.trim() !== "";
+}
+
+export function stripFileRefsForEditor(value) {
+  if (value == null) {
+    return value;
+  }
+  if (isFileRef(value)) {
+    return {};
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const next = {};
+  Object.entries(value).forEach(([key, child]) => {
+    if (isFileRef(child)) {
+      return;
+    }
+    next[key] = child;
+  });
+  return next;
+}
+
+export function mergeFileRefs(edited, previous) {
+  const files = fileRefEntries(previous);
+  if (!files.length) {
+    return edited;
+  }
+  if (edited == null || typeof edited !== "object" || Array.isArray(edited)) {
+    if (isFileRef(previous)) {
+      return previous;
+    }
+    const next = {};
+    files.forEach(({ key, value }) => {
+      next[key] = value;
+    });
+    return next;
+  }
+  const next = { ...edited };
+  files.forEach(({ key, value }) => {
+    if (!isFileRef(next[key])) {
+      next[key] = value;
+    }
+  });
+  return next;
+}
+
+function fileRefEntries(value) {
+  if (isFileRef(value)) {
+    return [{ key: "file", value }];
+  }
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+  return Object.entries(value)
+    .filter(([, child]) => isFileRef(child))
+    .map(([key, child]) => ({ key, value: child }));
+}
+
+export function collectFileFields(schema, path = []) {
+  if (!schema) {
+    return [];
+  }
+  const type = schemaType(schema);
+  if (type === "file") {
+    return [{ path, name: path.length ? path[path.length - 1] : "file", schema }];
+  }
+  const fields = [];
+  if ((type === "object" || type === "json") && schema.properties) {
+    Object.entries(schema.properties).forEach(([key, property]) => {
+      fields.push(...collectFileFields(property, [...path, key]));
+    });
+  }
+  return fields;
+}
+
 export function schemaType(schema) {
   if (!schema) return "object";
   const format = String(schema.format || "").toLowerCase();

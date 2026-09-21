@@ -300,11 +300,12 @@ export const Api = {
     });
   },
 
-  listCases(specId, operationKey, planId) {
+  listCases(specId, operationKey, planId, environmentId) {
     const query = new URLSearchParams();
     if (specId) query.set("specId", specId);
     if (planId) query.set("planId", planId);
     if (operationKey) query.set("operationKey", operationKey);
+    if (environmentId) query.set("environmentId", environmentId);
     return request(`/api/testdata?${query.toString()}`);
   },
 
@@ -340,8 +341,11 @@ export const Api = {
     return request(`/api/testdata/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) });
   },
 
-  deleteCase(id) {
-    return request(`/api/testdata/${encodeURIComponent(id)}`, { method: "DELETE" });
+  deleteCase(id, environmentId) {
+    const query = new URLSearchParams();
+    if (environmentId) query.set("environmentId", environmentId);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request(`/api/testdata/${encodeURIComponent(id)}${suffix}`, { method: "DELETE" });
   },
 
   exportCases(payload) {
@@ -352,11 +356,14 @@ export const Api = {
     return download("/api/testdata/export-collection", payload, "collection.json");
   },
 
-  importCollection(file, specId) {
+  importCollection(file, specId, environmentId) {
     const data = new FormData();
     data.append("file", file);
-    const query = specId ? `?specId=${encodeURIComponent(specId)}` : "";
-    return request(`/api/testdata/import-collection${query}`, { method: "POST", body: data });
+    const query = new URLSearchParams();
+    if (specId) query.set("specId", specId);
+    if (environmentId) query.set("environmentId", environmentId);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request(`/api/testdata/import-collection${suffix}`, { method: "POST", body: data });
   },
 
   exportEnvironment(payload) {
@@ -376,10 +383,38 @@ export const Api = {
     return request(`/api/specs/${encodeURIComponent(specId)}/environments`);
   },
 
+  createEnvironment(specId, payload) {
+    return request(`/api/specs/${encodeURIComponent(specId)}/environments`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  updateEnvironment(specId, environmentId, payload) {
+    return request(
+      `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}`,
+      { method: "PUT", body: JSON.stringify(payload) }
+    );
+  },
+
+  duplicateEnvironment(specId, environmentId) {
+    return request(
+      `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}/duplicate`,
+      { method: "POST" }
+    );
+  },
+
   applyEnvironment(specId, environmentId) {
     return request(
       `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}/apply`,
       { method: "POST" }
+    );
+  },
+
+  deleteEnvironment(specId, environmentId) {
+    return request(
+      `/api/specs/${encodeURIComponent(specId)}/environments/${encodeURIComponent(environmentId)}`,
+      { method: "DELETE" }
     );
   },
 
@@ -391,10 +426,10 @@ export const Api = {
     return request("/api/testdata/generate-plans", { method: "POST", body: JSON.stringify(payload) });
   },
 
-  runCase(id, auth) {
+  runCase(id, auth, environmentId) {
     return request(`/api/testdata/${encodeURIComponent(id)}/run`, {
       method: "POST",
-      body: JSON.stringify({ auth })
+      body: JSON.stringify({ auth, environmentId })
     });
   },
 
@@ -404,6 +439,13 @@ export const Api = {
 
   runPlan(payload) {
     return request("/api/testdata/run-plan", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  duplicateCase(id, payload) {
+    return request(`/api/testdata/${encodeURIComponent(id)}/duplicate`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
   },
 
   listRuns({ specId, planId, caseId, outcome, trigger, limit } = {}) {
@@ -438,9 +480,14 @@ export const Api = {
     return request(`/api/runs/compare?${query.toString()}`);
   },
 
-  uploadRequestFile(caseId, file) {
+  uploadRequestFile(caseId, file, part = "file") {
     const data = new FormData();
     data.append("file", file);
-    return request(`/api/testdata/${encodeURIComponent(caseId)}/files`, { method: "POST", body: data });
+    const query = new URLSearchParams();
+    if (part) query.set("part", part);
+    return request(`/api/testdata/${encodeURIComponent(caseId)}/files?${query.toString()}`, {
+      method: "POST",
+      body: data
+    });
   }
 };

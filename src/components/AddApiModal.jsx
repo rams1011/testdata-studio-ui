@@ -77,7 +77,7 @@ export default function AddApiModal({ onClose, onSave }) {
           <button type="button" className="btn" disabled={saving} onClick={onClose}>Cancel</button>
         </div>
         <p className="hint" style={{ marginTop: 0 }}>
-          Add a method and path. You can save test cases for it next — no Swagger file needed.
+          Add a method and path, then save test cases for it.
         </p>
         <div className="field">
           <label htmlFor="add-api-method">Method</label>

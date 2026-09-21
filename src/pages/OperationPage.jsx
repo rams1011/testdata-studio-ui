@@ -7,7 +7,7 @@ import ExtractsPicker from "../components/ExtractsPicker";
 import ExtractValueField, { PlanExtractsProvider } from "../components/ExtractValueField";
 import ImportCurlModal from "../components/ImportCurlModal";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
-import AuthSettings, { emptyAuth, useSpecAuth } from "../components/AuthSettings";
+import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
 import LastRunsStrip from "../components/LastRunsStrip";
 import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
@@ -22,7 +22,7 @@ import { applyCurlImport } from "../curlImport";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
-  const { spec, planId, operations, importCurlAsCase, deleteManualOperation } = useOutletContext();
+  const { spec, planId, operations, importCurlAsCase, deleteManualOperation, onSpecUpdated, runEnvironment, envEpoch, onEnvironmentsChanged } = useOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -37,6 +37,8 @@ export default function OperationPage() {
   const [running, setRunning] = useState(null);
   const [historyKey, setHistoryKey] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  const [environments, setEnvironments] = useState([]);
+  const [duplicateTarget, setDuplicateTarget] = useState("");
   const baseline = useRef("");
   const skipUnsavedPrompt = useRef(false);
   const curlImportRef = useRef(location.state?.curlImport);
@@ -58,7 +60,7 @@ export default function OperationPage() {
     const pendingImport = curlImportRef.current;
     Promise.all([
       Api.getOperation(specId, operationKey),
-      Api.listCases(specId, null, planId)
+      Api.listCases(specId, null, planId, runEnvironment?.id)
     ]).then(([nextOperation, allCases]) => {
       if (cancelled) return;
       const nextCases = (allCases || []).filter((item) => item.operationKey === operationKey);
@@ -102,7 +104,29 @@ export default function OperationPage() {
       }
     }).catch((error) => toast(error.message, true));
     return () => { cancelled = true; };
-  }, [specId, operationKey, caseId, spec, planId, toast, navigate, location.pathname]);
+  }, [specId, operationKey, caseId, spec, planId, toast, navigate, location.pathname, runEnvironment?.id]);
+
+  useEffect(() => {
+    if (!specId) return;
+    let cancelled = false;
+    Api.listEnvironments(specId)
+      .then((list) => {
+        if (!cancelled) setEnvironments(list || []);
+      })
+      .catch(() => {
+        if (!cancelled) setEnvironments([]);
+      });
+    return () => { cancelled = true; };
+  }, [specId, envEpoch]);
+
+  const otherEnvironments = useMemo(
+    () => environments.filter((item) => item.id && item.id !== runEnvironment?.id),
+    [environments, runEnvironment?.id]
+  );
+
+  useEffect(() => {
+    setDuplicateTarget(otherEnvironments[0]?.id || "");
+  }, [otherEnvironments]);
 
   const dirty = form ? snapshot(form, requestBody) !== baseline.current : false;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
@@ -136,20 +160,13 @@ export default function OperationPage() {
     if (!suggested || !suggested.type || suggested.type === "NONE") {
       return;
     }
-    setAuth((current) => {
-      if (current?.type && current.type !== "NONE") {
-        return current;
-      }
-      return {
-        ...emptyAuth(),
-        ...current,
-        type: suggested.type,
-        apiKeyName: suggested.apiKeyName || current?.apiKeyName || "X-API-Key",
-        apiKeyIn: suggested.apiKeyIn || current?.apiKeyIn || "header",
-        tokenUrl: suggested.tokenUrl || current?.tokenUrl || "",
-        grantType: suggested.grantType || current?.grantType || "client_credentials"
-      };
-    });
+    setAuth((current) => ({
+      ...current,
+      apiKeyName: current?.apiKeyName || suggested.apiKeyName || "X-API-Key",
+      apiKeyIn: current?.apiKeyIn || suggested.apiKeyIn || "header",
+      tokenUrl: current?.tokenUrl || suggested.tokenUrl || "",
+      grantType: current?.grantType || suggested.grantType || "client_credentials"
+    }));
   }, [operation?.key]);
 
   const paramGroups = useMemo(() => {
@@ -195,7 +212,7 @@ export default function OperationPage() {
   }
 
   async function refreshPlanCases() {
-    const all = await Api.listCases(specId, null, planId);
+    const all = await Api.listCases(specId, null, planId, runEnvironment?.id);
     setPlanCases(all || []);
     setCases((all || []).filter((item) => item.operationKey === operationKey));
   }
@@ -283,8 +300,22 @@ export default function OperationPage() {
     const saved = await Api.createCase(casePayload());
     setBoundCaseId(saved.id);
     upsertCase(saved);
-    markClean(form, requestBody);
     return saved.id;
+  }
+
+  async function commitRequestBody(nextBody, savedCaseId) {
+    setRequestBody(nextBody);
+    const id = savedCaseId || boundCaseId;
+    if (!id) {
+      return;
+    }
+    try {
+      const saved = await Api.updateCase(id, { ...casePayload(), requestBody: nextBody });
+      upsertCase(saved);
+      markClean(form, nextBody);
+    } catch (error) {
+      toast(error.message, true);
+    }
   }
 
   function casePayload() {
@@ -299,14 +330,20 @@ export default function OperationPage() {
       contentType: form.contentType || "NA",
       statusCode: Number(form.statusCode),
       maxResponseTimeMs: Number(form.maxResponseTimeMs),
-      requestBody: operation.requestBody ? requestBody : null
+      requestBody: operation.requestBody ? requestBody : null,
+      environmentId: runEnvironment?.id
     };
   }
 
   async function runCurrent() {
     setRunning("current");
     try {
-      const result = await Api.runDraft({ testCase: casePayload(), auth });
+      const result = await Api.runDraft({
+        caseId: boundCaseId || undefined,
+        testCase: casePayload(),
+        auth,
+        environmentId: runEnvironment?.id
+      });
       setRunResult(result);
       setHistoryKey((value) => value + 1);
       toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
@@ -317,10 +354,39 @@ export default function OperationPage() {
     }
   }
 
+  async function duplicateInto() {
+    if (dirty) {
+      toast("Save this case before duplicating", true);
+      return;
+    }
+    if (!boundCaseId || !duplicateTarget) {
+      toast("Save the case before duplicating into another environment", true);
+      return;
+    }
+    try {
+      const copied = await Api.duplicateCase(boundCaseId, {
+        fromEnvironmentId: runEnvironment?.id,
+        toEnvironmentId: duplicateTarget
+      });
+      const target = environments.find((item) => item.id === duplicateTarget);
+      sessionStorage.setItem(`testdata.env.${specId}`, duplicateTarget);
+      await Api.applyEnvironment(specId, duplicateTarget);
+      if (onSpecUpdated) {
+        onSpecUpdated(await Api.getSpec(specId));
+      }
+      onEnvironmentsChanged?.();
+      skipUnsavedPrompt.current = true;
+      toast(`Created a copy in ${target?.name || "environment"}`);
+      navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${copied.id}`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
   async function runSaved(id) {
     setRunning(id);
     try {
-      const result = await Api.runCase(id, auth);
+      const result = await Api.runCase(id, auth, runEnvironment?.id);
       setRunResult(result);
       setHistoryKey((value) => value + 1);
       toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
@@ -338,7 +404,8 @@ export default function OperationPage() {
         planId,
         operationKey: operation.key,
         includePositive: true,
-        includeNegative: true
+        includeNegative: true,
+        environmentId: runEnvironment?.id
       });
       await refreshPlanCases();
       toast(generateToast(result));
@@ -348,8 +415,11 @@ export default function OperationPage() {
   }
 
   async function remove(id) {
+    if (!window.confirm(`Delete this case${runEnvironment?.name ? ` from ${runEnvironment.name}` : ""}?`)) {
+      return;
+    }
     try {
-      await Api.deleteCase(id);
+      await Api.deleteCase(id, runEnvironment?.id);
       toast("Test case deleted");
       if (id === caseId) {
         navigate(`/s/${specId}/op/${encodeURIComponent(operationKey)}`);
@@ -387,7 +457,8 @@ export default function OperationPage() {
     return <div className="empty">Loading operation schema…</div>;
   }
 
-  const authCue = runResult && !runResult.passed && runResult.actualStatus === 401 && (auth?.type || "NONE") === "NONE";
+  const authCue = runResult && !runResult.passed && runResult.actualStatus === 401
+    && authCredentialsMissing(auth, runEnvironment?.authType);
 
   return (
     <PlanExtractsProvider extracts={extractOptions}>
@@ -449,10 +520,27 @@ export default function OperationPage() {
       {authCue ? (
         <div className="status-banner down">API returned 401. Add run authentication if this endpoint needs login.</div>
       ) : null}
+      {runEnvironment?.name ? (
+        <div className="status-banner ok">
+          Cases in <strong>{runEnvironment.name}</strong>. Save, update, and delete apply only here.
+          {boundCaseId && otherEnvironments.length ? (
+            <div className="actions" style={{ marginTop: 8 }}>
+              <select value={duplicateTarget} onChange={(event) => setDuplicateTarget(event.target.value)}>
+                {otherEnvironments.map((environment) => (
+                  <option key={environment.id} value={environment.id}>{environment.name}</option>
+                ))}
+              </select>
+              <button type="button" className="btn" onClick={duplicateInto}>
+                Duplicate into {otherEnvironments.find((item) => item.id === duplicateTarget)?.name || "environment"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid">
         <div>
-          <AuthSettings auth={auth} onChange={setAuth} specAuth={operation.auth} />
+          <AuthSettings auth={auth} onChange={setAuth} specAuth={operation.auth} environment={runEnvironment} />
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Test case</h3>
@@ -533,10 +621,12 @@ export default function OperationPage() {
                 resetKey={`${operationKey}-${caseId || "new"}`}
                 caseId={boundCaseId}
                 onEnsureCase={ensureCase}
+                onFileCommitted={commitRequestBody}
                 schema={operation.requestBody.jsonSchema}
                 value={requestBody}
                 onChange={setRequestBody}
                 contentType={form.contentType}
+                environmentId={runEnvironment?.id}
               />
             ) : (
               <div className="empty">This operation has no request body.</div>
@@ -595,7 +685,7 @@ export default function OperationPage() {
           />
           <RunResultPanel result={runResult} />
           <div className="card saved-case-list" style={{ marginTop: 16 }}>
-            <h3>Saved for this operation</h3>
+            <h3>{runEnvironment?.name ? `Saved in ${runEnvironment.name}` : "Saved for this operation"}</h3>
             {!cases.length ? (
               <div className="empty">
                 No cases yet. Generate for this operation, or Save the form.
@@ -628,7 +718,7 @@ export default function OperationPage() {
     {importOpen ? (
       <ImportCurlModal
         operations={operations}
-        allowCreate={Boolean(spec?.manual)}
+        allowCreate
         onClose={() => setImportOpen(false)}
         onImport={handleCurlImport}
       />
@@ -800,7 +890,8 @@ function formFromCase(testCase) {
     pathParams: testCase.pathParams || {},
     queryParams: testCase.queryParams || {},
     headers: testCase.headers || {},
-    cookieParams: testCase.cookieParams || {}
+    cookieParams: testCase.cookieParams || {},
+    environments: testCase.environments
   };
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import SchemaForm from "./SchemaForm";
+import SchemaForm, { SchemaFilePickers } from "./SchemaForm";
+import { collectFileFields, mergeFileRefs, stripFileRefsForEditor } from "../schema";
 import { jsonToXml, looksLikeXml, validateXml, xmlToJson } from "../xml";
 
 export default function SchemaBodyEditor({
@@ -9,6 +10,7 @@ export default function SchemaBodyEditor({
   resetKey,
   caseId,
   onEnsureCase,
+  onFileCommitted,
   searchAria = "Search fields",
   jsonAria = "JSON",
   tabsAria = "Editor",
@@ -16,10 +18,12 @@ export default function SchemaBodyEditor({
   extraActions,
   emptyToNull = false,
   format = "json",
-  allowExtracts = false
+  allowExtracts = false,
+  fileUploads = false,
+  environmentId
 }) {
   const xml = format === "xml";
-  const [mode, setMode] = useState(xml ? "xml" : "form");
+  const [mode, setMode] = useState(xml ? "xml" : "json");
   const [filter, setFilter] = useState("");
   const [jsonText, setJsonText] = useState("");
   const [xmlText, setXmlText] = useState("");
@@ -32,10 +36,10 @@ export default function SchemaBodyEditor({
   );
 
   useEffect(() => {
-    setMode(xml ? "xml" : "form");
+    setMode(xml ? "xml" : "json");
     setFilter("");
-    setJsonText(pretty(objectValue, emptyToNull));
-    setXmlText(xml ? jsonToXml(value ?? objectValue, schema) : "");
+    setJsonText(pretty(stripFileRefsForEditor(objectValue), emptyToNull));
+    setXmlText(xml ? jsonToXml(stripFileRefsForEditor(value ?? objectValue), schema) : "");
     setJsonError("");
     setXmlError("");
   }, [resetKey, emptyToNull, xml]);
@@ -45,7 +49,7 @@ export default function SchemaBodyEditor({
       if (mode !== "xml" || xmlError || looksLikeXml(value)) {
         return;
       }
-      const next = jsonToXml(objectValue, schema);
+      const next = jsonToXml(stripFileRefsForEditor(objectValue), schema);
       setXmlText((current) => (current === next ? current : next));
       return;
     }
@@ -55,7 +59,7 @@ export default function SchemaBodyEditor({
     if (mode !== "json" || (jsonError && !(emptyToNull && value == null))) {
       return;
     }
-    const next = pretty(objectValue, emptyToNull);
+    const next = pretty(stripFileRefsForEditor(objectValue), emptyToNull);
     setJsonText((current) => (current === next ? current : next));
   }, [value, objectValue, schema, mode, jsonError, xmlError, emptyToNull, xml]);
 
@@ -64,13 +68,13 @@ export default function SchemaBodyEditor({
   }
 
   function showJson() {
-    setJsonText(pretty(objectValue, emptyToNull));
+    setJsonText(pretty(stripFileRefsForEditor(objectValue), emptyToNull));
     setJsonError("");
     setMode("json");
   }
 
   function showXml() {
-    setXmlText(jsonToXml(value ?? objectValue, schema));
+    setXmlText(jsonToXml(stripFileRefsForEditor(value ?? objectValue), schema));
     setXmlError("");
     setMode("xml");
   }
@@ -80,11 +84,11 @@ export default function SchemaBodyEditor({
     const trimmed = text.trim();
     if (!trimmed) {
       setJsonError("");
-      onChange(emptyToNull ? null : {});
+      onChange(mergeFileRefs(emptyToNull ? null : {}, objectValue));
       return;
     }
     try {
-      onChange(JSON.parse(trimmed));
+      onChange(mergeFileRefs(JSON.parse(trimmed), objectValue));
       setJsonError("");
     } catch {
       setJsonError("Invalid JSON. The form still has the last valid body.");
@@ -119,6 +123,8 @@ export default function SchemaBodyEditor({
   function changeForm(next) {
     onChange(next);
   }
+
+  const fileFields = fileUploads ? collectFileFields(schema) : [];
 
   return (
     <div className="body-editor">
@@ -171,7 +177,7 @@ export default function SchemaBodyEditor({
         {extraActions}
       </div>
       {mode === "form" ? (
-        <SchemaForm schema={schema} value={objectValue} onChange={changeForm} filter={filter} caseId={caseId} onEnsureCase={onEnsureCase} allowExtracts={allowExtracts} />
+        <SchemaForm schema={schema} value={objectValue} onChange={changeForm} filter={filter} caseId={caseId} onEnsureCase={onEnsureCase} onFileCommitted={onFileCommitted} allowExtracts={allowExtracts} environmentId={environmentId} />
       ) : xml ? (
         <>
           {xmlError ? <div className="body-json-error">{xmlError}</div> : null}
@@ -180,7 +186,7 @@ export default function SchemaBodyEditor({
             value={xmlText}
             onChange={(event) => editXml(event.target.value)}
             spellCheck={false}
-            placeholder={emptyToNull ? "Leave blank if none" : undefined}
+            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : undefined}
             aria-invalid={Boolean(xmlError)}
             aria-label={jsonAria}
           />
@@ -193,18 +199,29 @@ export default function SchemaBodyEditor({
             value={jsonText}
             onChange={(event) => editJson(event.target.value)}
             spellCheck={false}
-            placeholder={emptyToNull ? "Leave blank if none" : undefined}
+            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : undefined}
             aria-invalid={Boolean(jsonError)}
             aria-label={jsonAria}
           />
         </>
       )}
+      {fileUploads && mode !== "form" && fileFields.length ? (
+        <SchemaFilePickers
+          schema={schema}
+          value={objectValue}
+          onChange={changeForm}
+          caseId={caseId}
+          onEnsureCase={onEnsureCase}
+          onFileCommitted={onFileCommitted}
+          environmentId={environmentId}
+        />
+      ) : null}
     </div>
   );
 }
 
 function asObject(value, schema, xml, emptyToNull) {
-  if (emptyToNull && value == null) {
+  if (emptyToNull && (value == null || isBlankJson(value))) {
     return null;
   }
   if (value == null) {
@@ -227,8 +244,21 @@ function asObject(value, schema, xml, emptyToNull) {
 }
 
 function pretty(value, emptyToNull) {
-  if (emptyToNull && value == null) {
+  if (emptyToNull && isBlankJson(value)) {
     return "";
   }
   return JSON.stringify(value ?? {}, null, 2);
+}
+
+function isBlankJson(value) {
+  if (value == null) {
+    return true;
+  }
+  if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
+    return true;
+  }
+  if (Array.isArray(value) && value.length === 0) {
+    return true;
+  }
+  return false;
 }
