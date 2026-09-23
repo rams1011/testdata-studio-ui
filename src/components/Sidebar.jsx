@@ -6,8 +6,7 @@ export default function Sidebar({
   operations,
   caseCounts = {},
   search,
-  onSearch,
-  onAddApi
+  onSearch
 }) {
   const { specId } = useParams();
   const location = useLocation();
@@ -52,7 +51,6 @@ export default function Sidebar({
   }
 
   const filteredCount = visibleOps.length;
-  const totalCases = Object.values(caseCounts).reduce((sum, count) => sum + count, 0);
 
   function renderOperation(operation) {
     return (
@@ -101,21 +99,6 @@ export default function Sidebar({
             ) : null}
           </div>
         </div>
-        <NavLink to={`/s/${specId}/cases`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-          Cases
-          {totalCases ? <span className="case-count">{totalCases}</span> : null}
-        </NavLink>
-        {onAddApi ? (
-          <button type="button" className="nav-link" onClick={onAddApi}>
-            Add API
-          </button>
-        ) : null}
-        <NavLink to={`/s/${specId}/history`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-          History
-        </NavLink>
-        <NavLink to={`/s/${specId}/export`} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-          Export
-        </NavLink>
       </div>
       <nav className="nav" ref={navRef}>
         {search && !filteredCount ? (

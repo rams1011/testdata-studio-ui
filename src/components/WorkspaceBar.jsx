@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, NavLink, useParams } from "react-router-dom";
 import { Api } from "../api";
 import { useToast } from "./Toast";
 import AccountMenu from "./AccountMenu";
+import SpecMoreMenu from "./SpecMoreMenu";
 import EnvironmentModal from "./EnvironmentModal";
 import EnvironmentPicker from "./EnvironmentPicker";
 import ItemPicker from "./ItemPicker";
 import PlanModal from "./PlanModal";
-import LabelField, { specLabel, uniqueLabels } from "./LabelField";
+import SpecSettingsModal, { specSettingsForm } from "./SpecSettingsModal";
+import { uniqueLabels } from "./LabelField";
 import { RELOAD_SPEC_CONFIRM } from "./Sidebar";
 
 export default function WorkspaceBar({
@@ -18,6 +20,7 @@ export default function WorkspaceBar({
   onPlansChange,
   onReloadSpec,
   onAddApi,
+  caseCount = 0,
   onSpecRenamed,
   envEpoch,
   onEnvironmentChange,
@@ -41,25 +44,15 @@ export default function WorkspaceBar({
   const [envEditingId, setEnvEditingId] = useState("");
   const [envForm, setEnvForm] = useState({ name: "local", baseUrl: "", authType: "NONE" });
   const [savingEnv, setSavingEnv] = useState(false);
-  const needsRename = spec.name && spec.title && spec.name === spec.title;
-  const [renaming, setRenaming] = useState(false);
-  const [renameFocus, setRenameFocus] = useState(false);
-  const [specName, setSpecName] = useState(spec.name || "");
-  const [specLabelValue, setSpecLabelValue] = useState(specLabel(spec));
+  const [specSettingsOpen, setSpecSettingsOpen] = useState(false);
+  const [specForm, setSpecForm] = useState(() => specSettingsForm(spec));
+  const [savingSpec, setSavingSpec] = useState(false);
   const [labelCatalog, setLabelCatalog] = useState([]);
-  const [editingLabel, setEditingLabel] = useState(false);
-  const [editingBaseUrl, setEditingBaseUrl] = useState(false);
-  const [specBaseUrl, setSpecBaseUrl] = useState(spec.baseUrl || "");
 
   useEffect(() => {
-    setSpecName(spec.name || "");
-    setSpecLabelValue(specLabel(spec));
-    setSpecBaseUrl(spec.baseUrl || "");
-    setRenaming(false);
-    setRenameFocus(false);
-    setEditingLabel(false);
-    setEditingBaseUrl(false);
-  }, [spec.specId, spec.name, spec.title, spec.label, spec.baseUrl]);
+    setSpecForm(specSettingsForm(spec));
+    setSpecSettingsOpen(false);
+  }, [spec.specId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,50 +100,33 @@ export default function WorkspaceBar({
     return () => { cancelled = true; };
   }, [spec.specId, spec.baseUrl, specId, envEpoch]);
 
-  async function saveSpecName() {
-    const nextName = specName.trim();
+  function openSpecSettings() {
+    setSpecForm(specSettingsForm(spec));
+    setSpecSettingsOpen(true);
+  }
+
+  async function saveSpecSettings() {
+    const nextName = specForm.name.trim();
     if (!nextName) {
       toast("Spec name is required", true);
       return;
     }
-    try {
-      const updated = await Api.renameSpec(specId, { name: nextName });
-      onSpecRenamed?.(updated);
-      setRenaming(false);
-      toast("Name saved");
-    } catch (error) {
-      toast(error.message, true);
-    }
-  }
-
-  async function saveSpecLabel() {
+    setSavingSpec(true);
     try {
       const updated = await Api.renameSpec(specId, {
-        name: spec.name || specName,
-        label: specLabelValue
+        name: nextName,
+        label: specForm.label,
+        baseUrl: specForm.baseUrl.trim()
       });
       onSpecRenamed?.(updated);
-      setSpecLabelValue(specLabel(updated));
+      setSpecForm(specSettingsForm(updated));
       setLabelCatalog((current) => uniqueLabels([...current.map((item) => ({ label: item })), updated]));
-      setEditingLabel(false);
-      toast("Label saved");
+      setSpecSettingsOpen(false);
+      toast("Spec saved");
     } catch (error) {
       toast(error.message, true);
-    }
-  }
-
-  async function saveSpecBaseUrl() {
-    try {
-      const updated = await Api.renameSpec(specId, {
-        name: spec.name || specName,
-        baseUrl: specBaseUrl.trim()
-      });
-      onSpecRenamed?.(updated);
-      setSpecBaseUrl(updated.baseUrl || "");
-      setEditingBaseUrl(false);
-      toast("Base URL saved");
-    } catch (error) {
-      toast(error.message, true);
+    } finally {
+      setSavingSpec(false);
     }
   }
 
@@ -422,181 +398,66 @@ export default function WorkspaceBar({
 
   return (
     <header className="workspace-bar">
-      <div className="workspace-spec">
-        <Link to="/" className="workspace-home">All specs</Link>
-        {renaming ? (
-          <div className="plan-add">
-            <input
-              value={specName}
-              autoFocus={renameFocus}
-              placeholder="Unique spec name"
-              onChange={(event) => setSpecName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") saveSpecName();
-                if (event.key === "Escape") setRenaming(false);
-              }}
-            />
-            <button type="button" className="btn" onClick={saveSpecName}>Save</button>
-            <button type="button" className="btn" onClick={() => setRenaming(false)}>Cancel</button>
-          </div>
-        ) : (
-          <div className="spec-title-row">
-            <div className="workspace-spec-name">{spec.name || spec.title}</div>
-            <button
-              type="button"
-              className="linkish"
-              onClick={() => {
-                setRenameFocus(true);
-                setRenaming(true);
-              }}
-            >
-              Rename
-            </button>
-          </div>
-        )}
-        {needsRename ? (
-          <div className="hint">Give this spec a unique name so you can tell it apart from the OpenAPI title.</div>
-        ) : spec.title && spec.title !== spec.name ? (
-          <div className="hint">{spec.title}</div>
-        ) : null}
-        {editingLabel ? (
-          <div className="spec-label-edit">
-            <LabelField
-              id="workspace-spec-label"
-              value={specLabelValue}
-              onChange={setSpecLabelValue}
-              suggestions={labelCatalog}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  saveSpecLabel();
-                }
-                if (event.key === "Escape") {
-                  setSpecLabelValue(specLabel(spec));
-                  setEditingLabel(false);
-                }
-              }}
-            />
-            <div className="plan-add">
-              <button type="button" className="btn" onClick={saveSpecLabel}>Save label</button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  setSpecLabelValue(specLabel(spec));
-                  setEditingLabel(false);
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="workspace-spec-meta">
-            <span>Label · {specLabel(spec)}</span>
-            <button type="button" className="linkish" onClick={() => setEditingLabel(true)}>
-              Change
-            </button>
-            <span>
-              {spec.manual
-                ? `REST · ${spec.operationCount || 0} API${spec.operationCount === 1 ? "" : "s"}`
-                : `${spec.operationCount} operations`}
-            </span>
-            <span>Base URL · {spec.baseUrl || "not set"}</span>
-            <button type="button" className="linkish" onClick={() => setEditingBaseUrl(true)}>
-              Change
-            </button>
-            <label htmlFor="environment-select">Environment</label>
-            <EnvironmentPicker
-              environments={environments}
-              selectedId={environmentId}
-              onSelect={applyEnvironment}
-              onEdit={(environment) => openEnvironmentModal("edit", environment)}
-              onDelete={removeEnvironment}
-              onCreate={() => openEnvironmentModal("create")}
-            />
-          </div>
-        )}
-        {editingBaseUrl ? (
-          <div className="spec-label-edit">
-            <div className="field">
-              <label htmlFor="workspace-spec-base-url">API base URL</label>
-              <input
-                id="workspace-spec-base-url"
-                value={specBaseUrl}
-                autoFocus
-                placeholder="e.g. http://localhost:8080"
-                onChange={(event) => setSpecBaseUrl(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    saveSpecBaseUrl();
-                  }
-                  if (event.key === "Escape") {
-                    setSpecBaseUrl(spec.baseUrl || "");
-                    setEditingBaseUrl(false);
-                  }
-                }}
-              />
-              <div className="hint">
-                Saved cases that still use the previous spec URL are updated. Cases with a custom URL are left as-is.
-                Leave blank to use the OpenAPI servers URL.
-              </div>
-            </div>
-            <div className="plan-add">
-              <button type="button" className="btn" onClick={saveSpecBaseUrl}>Save base URL</button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  setSpecBaseUrl(spec.baseUrl || "");
-                  setEditingBaseUrl(false);
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </div>
-      <div className="workspace-plan">
-        <label htmlFor="plan-select">Test plan</label>
-        <div className="workspace-plan-row">
-          <ItemPicker
-            items={plans}
-            selectedId={planId}
-            triggerId="plan-select"
-            ariaLabel="Test plans"
-            emptyTrigger="No plan"
-            emptyList="No plans yet"
-            newLabel="New plan…"
-            onSelect={onSelectPlan}
-            onEdit={(plan) => openPlanModal("edit", plan)}
-            onDelete={removePlan}
-            onCreate={() => openPlanModal("create")}
-          />
-          {onAddApi ? (
-            <button type="button" className="btn" onClick={onAddApi}>
-              Add API
-            </button>
-          ) : (
-            <button type="button" className="btn" onClick={chooseReloadSource} disabled={reloading}>
-              {reloading ? "Updating…" : "Update spec"}
-            </button>
-          )}
-        </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".json,.yaml,.yml"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) reloadSpec(file);
-          }}
+      <Link to="/" className="workspace-home">All specs</Link>
+      <button
+        type="button"
+        className="workspace-spec-name"
+        title="Spec settings"
+        onClick={openSpecSettings}
+      >
+        {spec.name || spec.title}
+      </button>
+      <div className="workspace-control">
+        <span className="workspace-control-label">Environment</span>
+        <EnvironmentPicker
+          environments={environments}
+          selectedId={environmentId}
+          onSelect={applyEnvironment}
+          onEdit={(environment) => openEnvironmentModal("edit", environment)}
+          onDelete={removeEnvironment}
+          onCreate={() => openEnvironmentModal("create")}
         />
       </div>
+      <div className="workspace-control">
+        <span className="workspace-control-label">Test plan</span>
+        <ItemPicker
+          items={plans}
+          selectedId={planId}
+          triggerId="plan-select"
+          ariaLabel="Test plans"
+          emptyTrigger="No plan"
+          emptyList="No plans yet"
+          newLabel="New plan…"
+          onSelect={onSelectPlan}
+          onEdit={(plan) => openPlanModal("edit", plan)}
+          onDelete={removePlan}
+          onCreate={() => openPlanModal("create")}
+        />
+      </div>
+      <NavLink
+        to={`/s/${specId}/cases`}
+        className={({ isActive }) => `workspace-cases${isActive ? " active" : ""}`}
+      >
+        Cases
+        {caseCount ? <span className="workspace-cases-count">{caseCount}</span> : null}
+      </NavLink>
+      {onAddApi ? (
+        <button type="button" className="btn" onClick={onAddApi}>
+          Add API
+        </button>
+      ) : null}
+      <SpecMoreMenu specId={specId} onSpecSettings={openSpecSettings} />
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,.yaml,.yml"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) reloadSpec(file);
+        }}
+      />
       <AccountMenu
         account={account}
         canManage={canManage}
@@ -628,6 +489,19 @@ export default function WorkspaceBar({
             setEnvEditingId("");
           }}
           onDuplicate={envModal === "edit" ? duplicateCurrentEnvironment : undefined}
+        />
+      ) : null}
+      {specSettingsOpen ? (
+        <SpecSettingsModal
+          spec={spec}
+          form={specForm}
+          onChange={setSpecForm}
+          labelCatalog={labelCatalog}
+          saving={savingSpec}
+          reloading={reloading}
+          onSave={saveSpecSettings}
+          onClose={() => setSpecSettingsOpen(false)}
+          onUpdateSpec={spec.manual ? undefined : chooseReloadSource}
         />
       ) : null}
     </header>
