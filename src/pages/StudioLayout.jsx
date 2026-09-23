@@ -238,7 +238,6 @@ export default function StudioLayout() {
           caseCounts={caseCounts}
           search={search}
           onSearch={setSearch}
-          onAddApi={() => setAddApiOpen(true)}
         />
       ) : (
         <aside className="sidebar">
@@ -258,6 +257,7 @@ export default function StudioLayout() {
             onPlansChange={reloadPlans}
             onReloadSpec={reloadSpec}
             onAddApi={() => setAddApiOpen(true)}
+            caseCount={cases.length}
             onSpecRenamed={handleSpecUpdated}
             envEpoch={envEpoch}
             onEnvironmentChange={setRunEnvironment}
