@@ -239,10 +239,6 @@ export default function StudioLayout() {
           search={search}
           onSearch={setSearch}
           onAddApi={() => setAddApiOpen(true)}
-          account={session?.authenticated ? session.account : null}
-          canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
-          canManageSubscriptions={Boolean(session?.saas && session?.authenticated)}
-          onSignOut={session?.saas && session?.authenticated ? signOut : null}
         />
       ) : (
         <aside className="sidebar">
@@ -266,6 +262,10 @@ export default function StudioLayout() {
             envEpoch={envEpoch}
             onEnvironmentChange={setRunEnvironment}
             onEnvironmentsChanged={() => setEnvEpoch((current) => current + 1)}
+            account={session?.authenticated ? session.account : null}
+            canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
+            canManageSubscriptions={Boolean(session?.saas && session?.authenticated)}
+            onSignOut={session?.saas && session?.authenticated ? signOut : null}
           />
         ) : null}
         <main className="main">

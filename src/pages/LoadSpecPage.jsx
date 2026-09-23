@@ -20,6 +20,9 @@ export default function LoadSpecPage() {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [reloadingId, setReloadingId] = useState("");
   const [backend, setBackend] = useState({ status: "checking", specs: [], session: null });
@@ -27,8 +30,11 @@ export default function LoadSpecPage() {
   const reloadTargetRef = useRef(null);
   const importFileRef = useRef(null);
   const nameRef = useRef(null);
+  const workspaceNameRef = useRef(null);
   const addButtonRef = useRef(null);
+  const workspaceSelectRef = useRef(null);
   const loadingRef = useRef(false);
+  const workspaceBusyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +91,26 @@ export default function LoadSpecPage() {
       addButtonRef.current?.focus();
     };
   }, [adding]);
+
+  workspaceBusyRef.current = workspaceBusy;
+
+  useEffect(() => {
+    if (!creatingWorkspace) return undefined;
+    workspaceNameRef.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(event) {
+      if (event.key === "Escape" && !workspaceBusyRef.current) {
+        setCreatingWorkspace(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+      workspaceSelectRef.current?.focus();
+    };
+  }, [creatingWorkspace]);
 
   const specs = (backend.specs || []).filter((spec) => {
     if (!query.trim()) return true;
@@ -174,6 +200,12 @@ export default function LoadSpecPage() {
   }
 
   async function switchWorkspace(tenantId) {
+    if (tenantId === NEW_WORKSPACE_VALUE) {
+      if (studioOpen) {
+        openWorkspaceModal();
+      }
+      return;
+    }
     try {
       const session = await Api.switchTenant(tenantId);
       saveSession(session.token || undefined, session.tenant?.id);
@@ -185,19 +217,32 @@ export default function LoadSpecPage() {
     }
   }
 
+  function openWorkspaceModal() {
+    setWorkspaceName("");
+    setCreatingWorkspace(true);
+  }
+
   async function addWorkspace() {
-    const name = window.prompt("New workspace name");
-    if (!name?.trim()) return;
+    const trimmed = workspaceName.trim();
+    if (!trimmed) {
+      toast("Give this workspace a name first", true);
+      workspaceNameRef.current?.focus();
+      return;
+    }
+    setWorkspaceBusy(true);
     try {
-      const tenant = await Api.createTenant({ name: name.trim() });
+      const tenant = await Api.createTenant({ name: trimmed });
       saveSession(undefined, tenant.id);
       const session = await Api.session();
       saveSession(session.token || undefined, tenant.id);
       const specs = await Api.listSpecs();
       setBackend((current) => ({ ...current, session, specs: specs || [] }));
+      setCreatingWorkspace(false);
       toast(`Created workspace ${tenant.name}`);
     } catch (error) {
       toast(error.message, true);
+    } finally {
+      setWorkspaceBusy(false);
     }
   }
 
@@ -291,6 +336,7 @@ export default function LoadSpecPage() {
           <label className="hint" htmlFor="workspace-select">Workspace</label>
           <select
             id="workspace-select"
+            ref={workspaceSelectRef}
             value={backend.session.tenant?.id || ""}
             onChange={(event) => switchWorkspace(event.target.value)}
           >
@@ -299,8 +345,10 @@ export default function LoadSpecPage() {
                 {tenant.name}{tenant.ready === false ? " (read-only)" : ""}
               </option>
             ))}
+            {studioOpen ? (
+              <option value={NEW_WORKSPACE_VALUE}>New workspace…</option>
+            ) : null}
           </select>
-          <button type="button" className="btn" disabled={!studioOpen} onClick={addWorkspace}>New workspace</button>
           {backend.session.account?.email ? (
             <span className="hint">{backend.session.account.email}</span>
           ) : null}
@@ -481,6 +529,68 @@ export default function LoadSpecPage() {
       </div>
       )}
 
+      {creatingWorkspace && !saasLocked ? (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !workspaceBusy) {
+              setCreatingWorkspace(false);
+            }
+          }}
+        >
+          <div
+            className="card modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-workspace-title"
+          >
+            <div className="card-head">
+              <h3 id="new-workspace-title">New workspace</h3>
+              <button
+                type="button"
+                className="btn"
+                disabled={workspaceBusy}
+                onClick={() => setCreatingWorkspace(false)}
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="hint" style={{ marginTop: 0 }}>
+              Specs, collections, and environments stay private to this workspace.
+              It uses the same organization plan as your other workspaces.
+            </p>
+            <div className="field">
+              <label htmlFor="new-workspace-name">Name <span className="req">*</span></label>
+              <input
+                id="new-workspace-name"
+                ref={workspaceNameRef}
+                value={workspaceName}
+                autoComplete="off"
+                disabled={workspaceBusy}
+                onChange={(event) => setWorkspaceName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addWorkspace();
+                  }
+                }}
+                placeholder="e.g. Acme QA"
+              />
+            </div>
+            <div className="actions" style={{ marginTop: 16, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={workspaceBusy}
+                onClick={addWorkspace}
+              >
+                {workspaceBusy ? "Creating…" : "Create workspace"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {adding && !saasLocked ? (
         <div
           className="modal-backdrop"
@@ -610,6 +720,8 @@ export default function LoadSpecPage() {
     </div>
   );
 }
+
+const NEW_WORKSPACE_VALUE = "__new_workspace__";
 
 function groupSpecs(specs) {
   const groups = new Map();

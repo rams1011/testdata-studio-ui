@@ -167,7 +167,7 @@ export default function ExportPage() {
           <p className="hint">
             Downloads <strong>{runEnvironment?.name || "the selected environment"}</strong> from the
             workspace bar for git or TestNG (<code>automation.environment-file</code>). Name, base URL,
-            and auth type come from Manage environment. Auth is stored as <code>{"${ENV_VAR}"}</code>
+            and auth type come from Edit environment. Auth is stored as <code>{"${ENV_VAR}"}</code>
             placeholders — never session tokens. Import is only for a file from another machine.
           </p>
           <div className="actions">
