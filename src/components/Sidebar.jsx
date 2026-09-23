@@ -7,11 +7,7 @@ export default function Sidebar({
   caseCounts = {},
   search,
   onSearch,
-  onAddApi,
-  account,
-  canManage = false,
-  canManageSubscriptions = false,
-  onSignOut
+  onAddApi
 }) {
   const { specId } = useParams();
   const location = useLocation();
@@ -153,17 +149,6 @@ export default function Sidebar({
             })
           : visibleOps.map(renderOperation)}
       </nav>
-      <div className="side-foot">
-        <NavLink to="/" className="btn ghost">All specs</NavLink>
-        {canManage ? <NavLink to="/admin" className="btn ghost">Admin</NavLink> : null}
-        {canManageSubscriptions ? <NavLink to="/subscriptions" className="btn ghost">Plan</NavLink> : null}
-        {onSignOut ? (
-          <>
-            {account?.email ? <div className="side-foot-user">{account.email}</div> : null}
-            <button type="button" className="btn ghost" onClick={onSignOut}>Sign out</button>
-          </>
-        ) : null}
-      </div>
     </aside>
   );
 }

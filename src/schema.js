@@ -455,17 +455,16 @@ export function parseJsonPathAssertions(serialized) {
     return result;
   }
   serialized.split("|").forEach((pair) => {
-    const trimmed = pair.trim();
-    if (!trimmed) {
-      return;
-    }
-    const separator = trimmed.indexOf("=");
+    const separator = pair.indexOf("=");
     if (separator < 0) {
-      result.set(trimmed, "");
+      const path = pair.trim();
+      if (path) {
+        result.set(path, "");
+      }
       return;
     }
-    const path = trimmed.slice(0, separator).trim();
-    let value = trimmed.slice(separator + 1).trim();
+    const path = pair.slice(0, separator).trim();
+    let value = pair.slice(separator + 1);
     if (value === "{}") {
       value = "";
     }
@@ -479,7 +478,7 @@ export function parseJsonPathAssertions(serialized) {
 export function serializeJsonPathAssertions(selections) {
   const pairs = (selections || [])
     .filter((item) => item.selected && item.path && item.path.trim())
-    .map((item) => `${item.path.trim()}=${item.value == null ? "" : String(item.value).trim()}`);
+    .map((item) => `${item.path.trim()}=${item.value == null ? "" : String(item.value)}`);
   return pairs.length ? pairs.join("|") : "NA";
 }
 

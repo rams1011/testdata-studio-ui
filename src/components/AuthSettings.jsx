@@ -120,8 +120,8 @@ export default function AuthSettings({ auth, onChange, specAuth, environment }) 
       <p className="hint" style={{ marginTop: 8, marginBottom: 12 }}>
         Used only when you click Run — not saved with the case.
         {type === "NONE"
-          ? ` ${envName || "This environment"} does not send credentials. Change Auth type under Manage environment if this host needs login.`
-          : ` Enter credentials for ${envName || "this environment"}. Change Auth type under Manage environment.`}
+          ? ` ${envName || "This environment"} does not send credentials. Choose Edit environment in the Environment dropdown if this host needs login.`
+          : ` Enter credentials for ${envName || "this environment"}. Choose Edit environment in the Environment dropdown to change auth type.`}
         {specAuth && specAuth.type && specAuth.type !== "NONE" ? ` Spec uses ${specAuth.type}${specAuth.schemeName ? ` (${specAuth.schemeName})` : ""}.` : ""}
       </p>
       {type === "BASIC" ? (

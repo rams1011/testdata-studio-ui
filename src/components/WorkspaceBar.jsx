@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Api } from "../api";
 import { useToast } from "./Toast";
+import AccountMenu from "./AccountMenu";
+import EnvironmentModal from "./EnvironmentModal";
+import EnvironmentPicker from "./EnvironmentPicker";
+import ItemPicker from "./ItemPicker";
+import PlanModal from "./PlanModal";
 import LabelField, { specLabel, uniqueLabels } from "./LabelField";
 import { RELOAD_SPEC_CONFIRM } from "./Sidebar";
 
@@ -16,17 +21,24 @@ export default function WorkspaceBar({
   onSpecRenamed,
   envEpoch,
   onEnvironmentChange,
-  onEnvironmentsChanged
+  onEnvironmentsChanged,
+  account,
+  canManage = false,
+  canManageSubscriptions = false,
+  onSignOut
 }) {
   const { specId } = useParams();
   const { toast } = useToast();
   const fileRef = useRef(null);
-  const [newPlanName, setNewPlanName] = useState("");
+  const [planModal, setPlanModal] = useState(null);
+  const [planEditingId, setPlanEditingId] = useState("");
+  const [planFormName, setPlanFormName] = useState("");
+  const [savingPlan, setSavingPlan] = useState(false);
   const [reloading, setReloading] = useState(false);
   const [environments, setEnvironments] = useState([]);
   const [environmentId, setEnvironmentId] = useState("");
-  const [envDraft, setEnvDraft] = useState(false);
-  const [envManageOpen, setEnvManageOpen] = useState(false);
+  const [envModal, setEnvModal] = useState(null);
+  const [envEditingId, setEnvEditingId] = useState("");
   const [envForm, setEnvForm] = useState({ name: "local", baseUrl: "", authType: "NONE" });
   const [savingEnv, setSavingEnv] = useState(false);
   const needsRename = spec.name && spec.title && spec.name === spec.title;
@@ -79,7 +91,6 @@ export default function WorkspaceBar({
             || list[0]?.id
             || "";
         setEnvironmentId(selected);
-        setEnvDraft(false);
         setEnvForm(envFormFrom(list, selected, spec));
         if (selected) {
           sessionStorage.setItem(`testdata.env.${specId}`, selected);
@@ -168,13 +179,6 @@ export default function WorkspaceBar({
     if (!(list || []).length) {
       sessionStorage.removeItem(`testdata.env.${specId}`);
       setEnvironmentId("");
-      setEnvDraft(true);
-      setEnvManageOpen(true);
-      setEnvForm({
-        name: "",
-        baseUrl: "",
-        authType: "NONE"
-      });
       notifyEnvironment(null);
       return null;
     }
@@ -182,7 +186,6 @@ export default function WorkspaceBar({
       ? preferredId
       : (list || [])[0]?.id || "";
     setEnvironmentId(nextId);
-    setEnvDraft(false);
     setEnvForm(envFormFrom(list || [], nextId, spec));
     if (nextId) {
       sessionStorage.setItem(`testdata.env.${specId}`, nextId);
@@ -225,29 +228,26 @@ export default function WorkspaceBar({
     }
   }
 
-  function onEnvironmentMenu(nextId) {
-    if (nextId === "__new__") {
-      startNewEnvironment();
-      return;
+  function openEnvironmentModal(mode, environment) {
+    if (mode === "edit") {
+      if (!environment?.id) {
+        return;
+      }
+      setEnvEditingId(environment.id);
+      setEnvForm({
+        name: environment.name || "",
+        baseUrl: environment.baseUrl || "",
+        authType: environment.authType || "NONE"
+      });
+    } else {
+      setEnvEditingId("");
+      setEnvForm({
+        name: "",
+        baseUrl: spec?.baseUrl || "",
+        authType: "NONE"
+      });
     }
-    if (!nextId) {
-      return;
-    }
-    if (envDraft) {
-      setEnvDraft(false);
-      setEnvForm(envFormFrom(environments, nextId, spec));
-    }
-    applyEnvironment(nextId);
-  }
-
-  function startNewEnvironment() {
-    setEnvDraft(true);
-    setEnvManageOpen(true);
-    setEnvForm({
-      name: "",
-      baseUrl: "",
-      authType: "NONE"
-    });
+    setEnvModal(mode);
   }
 
   async function saveEnvironment() {
@@ -263,7 +263,7 @@ export default function WorkspaceBar({
     }
     setSavingEnv(true);
     try {
-      if (envDraft || !environmentId) {
+      if (envModal === "create" || !envEditingId) {
         const created = await Api.createEnvironment(specId, {
           name,
           baseUrl,
@@ -271,15 +271,17 @@ export default function WorkspaceBar({
         });
         await refreshEnvironments(created.id, true);
         onEnvironmentsChanged?.();
+        setEnvModal(null);
         toast(`Created environment ${created.name}`);
       } else {
-        const updated = await Api.updateEnvironment(specId, environmentId, {
+        const updated = await Api.updateEnvironment(specId, envEditingId, {
           name,
           baseUrl,
           authType: envForm.authType
         });
-        await refreshEnvironments(updated.id, environmentId === sessionStorage.getItem(`testdata.env.${specId}`));
+        await refreshEnvironments(updated.id, envEditingId === sessionStorage.getItem(`testdata.env.${specId}`));
         onEnvironmentsChanged?.();
+        setEnvModal(null);
         toast(`Saved environment ${updated.name}`);
       }
     } catch (error) {
@@ -290,14 +292,16 @@ export default function WorkspaceBar({
   }
 
   async function duplicateCurrentEnvironment() {
-    if (!environmentId || envDraft) {
+    const targetId = envEditingId || environmentId;
+    if (!targetId) {
       return;
     }
     setSavingEnv(true);
     try {
-      const created = await Api.duplicateEnvironment(specId, environmentId);
+      const created = await Api.duplicateEnvironment(specId, targetId);
       await refreshEnvironments(created.id, true);
       onEnvironmentsChanged?.();
+      setEnvModal(null);
       toast(`Duplicated environment to ${created.name} with its cases`);
     } catch (error) {
       toast(error.message, true);
@@ -306,55 +310,88 @@ export default function WorkspaceBar({
     }
   }
 
-  async function removeEnvironment() {
-    if (!environmentId || envDraft) {
-      setEnvDraft(false);
-      setEnvForm(envFormFrom(environments, environmentId, spec));
+  async function removeEnvironment(environment) {
+    const target = environment || selectedEnvironment();
+    if (!target?.id) {
       return;
     }
-    const current = selectedEnvironment();
-    if (!window.confirm(`Delete environment "${current?.name || environmentId}"?\n\nCases that exist only in this environment will be deleted.`)) {
+    if (!window.confirm(`Delete environment "${target.name || target.id}"?\n\nCases that exist only in this environment will be deleted.`)) {
       return;
     }
     try {
-      await Api.deleteEnvironment(specId, environmentId);
-      sessionStorage.removeItem(`testdata.env.${specId}`);
-      await refreshEnvironments(null, false);
+      await Api.deleteEnvironment(specId, target.id);
+      if (target.id === environmentId) {
+        sessionStorage.removeItem(`testdata.env.${specId}`);
+      }
+      const remaining = await refreshEnvironments(
+        target.id === environmentId ? null : environmentId,
+        false
+      );
       onEnvironmentsChanged?.();
       toast("Environment deleted");
+      if (!remaining) {
+        openEnvironmentModal("create");
+      }
     } catch (error) {
       toast(error.message, true);
     }
   }
 
-  async function addPlan() {
-    const name = newPlanName.trim();
+  function openPlanModal(mode, plan) {
+    if (mode === "edit") {
+      if (!plan?.id) {
+        return;
+      }
+      setPlanEditingId(plan.id);
+      setPlanFormName(plan.name || "");
+    } else {
+      setPlanEditingId("");
+      setPlanFormName("");
+    }
+    setPlanModal(mode);
+  }
+
+  async function savePlan() {
+    const name = planFormName.trim();
     if (!name) {
       toast("Enter a plan name", true);
       return;
     }
+    setSavingPlan(true);
     try {
-      const created = await Api.createPlan(specId, { name });
-      setNewPlanName("");
-      await onPlansChange(created.id);
-      toast(`Created plan ${created.name}`);
+      if (planModal === "create" || !planEditingId) {
+        const created = await Api.createPlan(specId, { name });
+        await onPlansChange(created.id);
+        setPlanModal(null);
+        toast(`Created plan ${created.name}`);
+      } else {
+        const updated = await Api.updatePlan(specId, planEditingId, { name });
+        await onPlansChange(updated.id === planId ? updated.id : planId);
+        setPlanModal(null);
+        toast(`Saved plan ${updated.name}`);
+      }
     } catch (error) {
       toast(error.message, true);
+    } finally {
+      setSavingPlan(false);
     }
   }
 
-  async function removePlan() {
+  async function removePlan(plan) {
     if (plans.length <= 1) {
       toast("Keep at least one plan", true);
       return;
     }
-    const current = plans.find((plan) => plan.id === planId);
-    if (!window.confirm(`Delete plan "${current?.name || planId}" and its test cases?`)) {
+    const target = plan || plans.find((item) => item.id === planId);
+    if (!target?.id) {
+      return;
+    }
+    if (!window.confirm(`Delete plan "${target.name || target.id}" and its test cases?`)) {
       return;
     }
     try {
-      await Api.deletePlan(specId, planId);
-      await onPlansChange();
+      await Api.deletePlan(specId, target.id);
+      await onPlansChange(target.id === planId ? undefined : planId);
       toast("Plan deleted");
     } catch (error) {
       toast(error.message, true);
@@ -386,6 +423,7 @@ export default function WorkspaceBar({
   return (
     <header className="workspace-bar">
       <div className="workspace-spec">
+        <Link to="/" className="workspace-home">All specs</Link>
         {renaming ? (
           <div className="plan-add">
             <input
@@ -469,100 +507,16 @@ export default function WorkspaceBar({
               Change
             </button>
             <label htmlFor="environment-select">Environment</label>
-            <select
-              id="environment-select"
-              value={envDraft ? "__new__" : environmentId || environments[0]?.id || "__new__"}
-              onChange={(event) => onEnvironmentMenu(event.target.value)}
-            >
-              {environments.map((environment) => (
-                <option key={environment.id} value={environment.id}>
-                  {environment.name}
-                </option>
-              ))}
-              <option value="__new__">New environment…</option>
-            </select>
+            <EnvironmentPicker
+              environments={environments}
+              selectedId={environmentId}
+              onSelect={applyEnvironment}
+              onEdit={(environment) => openEnvironmentModal("edit", environment)}
+              onDelete={removeEnvironment}
+              onCreate={() => openEnvironmentModal("create")}
+            />
           </div>
         )}
-        <details
-          className="plan-manage"
-          open={envManageOpen}
-          onToggle={(event) => setEnvManageOpen(event.currentTarget.open)}
-        >
-          <summary>Manage environment</summary>
-          <div className="env-manage">
-            <p className="hint">
-              {envDraft
-                ? "Enter a name and base URL, then Save. Cases you add after switching to it belong to that environment."
-                : `Editing ${selectedEnvironment()?.name || "environment"}. Cases you save belong to it. Renaming keeps those cases. Duplicate copies this host, auth, and its cases.`}
-            </p>
-            <div className="field">
-              <label htmlFor="workspace-env-name">Name</label>
-              <input
-                id="workspace-env-name"
-                value={envForm.name}
-                placeholder="local, int, prod"
-                onChange={(event) => setEnvForm({ ...envForm, name: event.target.value })}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    saveEnvironment();
-                  }
-                  if (event.key === "Escape" && envDraft) {
-                    removeEnvironment();
-                  }
-                }}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="workspace-env-base-url">Base URL</label>
-              <input
-                id="workspace-env-base-url"
-                value={envForm.baseUrl}
-                placeholder="https://int.example.com/employee-service"
-                onChange={(event) => setEnvForm({ ...envForm, baseUrl: event.target.value })}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    saveEnvironment();
-                  }
-                }}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="workspace-env-auth">Auth type</label>
-              <select
-                id="workspace-env-auth"
-                value={envForm.authType}
-                onChange={(event) => setEnvForm({ ...envForm, authType: event.target.value })}
-              >
-                <option value="NONE">None</option>
-                <option value="BEARER">Bearer token</option>
-                <option value="BASIC">Basic</option>
-                <option value="API_KEY">API key</option>
-                <option value="OAUTH2">OAuth2</option>
-              </select>
-            </div>
-            <div className="env-manage-actions">
-              <button type="button" className="btn primary" onClick={saveEnvironment} disabled={savingEnv}>
-                {savingEnv ? "Saving…" : envDraft ? "Save new" : "Save"}
-              </button>
-              {envDraft ? (
-                <button type="button" className="linkish" onClick={removeEnvironment}>
-                  Cancel
-                </button>
-              ) : environmentId ? (
-                <>
-                  <button type="button" className="btn" onClick={duplicateCurrentEnvironment} disabled={savingEnv}>
-                    Duplicate environment
-                  </button>
-                  <button type="button" className="linkish" onClick={removeEnvironment}>
-                    Delete {selectedEnvironment()?.name || "environment"}
-                  </button>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </details>
         {editingBaseUrl ? (
           <div className="spec-label-edit">
             <div className="field">
@@ -608,11 +562,19 @@ export default function WorkspaceBar({
       <div className="workspace-plan">
         <label htmlFor="plan-select">Test plan</label>
         <div className="workspace-plan-row">
-          <select id="plan-select" value={planId} onChange={(event) => onSelectPlan(event.target.value)}>
-            {plans.map((plan) => (
-              <option key={plan.id} value={plan.id}>{plan.name}</option>
-            ))}
-          </select>
+          <ItemPicker
+            items={plans}
+            selectedId={planId}
+            triggerId="plan-select"
+            ariaLabel="Test plans"
+            emptyTrigger="No plan"
+            emptyList="No plans yet"
+            newLabel="New plan…"
+            onSelect={onSelectPlan}
+            onEdit={(plan) => openPlanModal("edit", plan)}
+            onDelete={removePlan}
+            onCreate={() => openPlanModal("create")}
+          />
           {onAddApi ? (
             <button type="button" className="btn" onClick={onAddApi}>
               Add API
@@ -623,23 +585,6 @@ export default function WorkspaceBar({
             </button>
           )}
         </div>
-        <details className="plan-manage">
-          <summary>Manage plan</summary>
-          <div className="plan-add">
-            <input
-              value={newPlanName}
-              placeholder="New plan name"
-              onChange={(event) => setNewPlanName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") addPlan();
-              }}
-            />
-            <button type="button" className="btn" onClick={addPlan}>Add</button>
-          </div>
-          <button type="button" className="btn" onClick={removePlan} disabled={plans.length <= 1}>
-            Delete plan
-          </button>
-        </details>
         <input
           ref={fileRef}
           type="file"
@@ -652,6 +597,39 @@ export default function WorkspaceBar({
           }}
         />
       </div>
+      <AccountMenu
+        account={account}
+        canManage={canManage}
+        canManageSubscriptions={canManageSubscriptions}
+        onSignOut={onSignOut}
+      />
+      {planModal ? (
+        <PlanModal
+          mode={planModal}
+          name={planFormName}
+          onChange={setPlanFormName}
+          saving={savingPlan}
+          onSave={savePlan}
+          onClose={() => {
+            setPlanModal(null);
+            setPlanEditingId("");
+          }}
+        />
+      ) : null}
+      {envModal ? (
+        <EnvironmentModal
+          mode={envModal}
+          form={envForm}
+          onChange={setEnvForm}
+          saving={savingEnv}
+          onSave={saveEnvironment}
+          onClose={() => {
+            setEnvModal(null);
+            setEnvEditingId("");
+          }}
+          onDuplicate={envModal === "edit" ? duplicateCurrentEnvironment : undefined}
+        />
+      ) : null}
     </header>
   );
 }

@@ -290,12 +290,81 @@ a { color: inherit; text-decoration: none; }
 }
 .workspace-bar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-    gap: 12px 28px;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 320px) auto;
+    gap: 12px 20px;
     align-items: start;
     padding: 12px 28px;
     background: #fff;
     border-bottom: 1px solid var(--line);
+}
+.workspace-home {
+    display: inline-block;
+    margin-bottom: 6px;
+    color: var(--copper);
+    font-size: 13px;
+}
+.workspace-home:hover {
+    color: var(--copper-dark);
+    text-decoration: underline;
+}
+.account-menu {
+    position: relative;
+    justify-self: end;
+}
+.account-menu-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 220px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    padding: 6px 10px;
+}
+.account-menu-avatar {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    background: var(--navy);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+.account-menu-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+}
+.account-menu-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 30;
+    min-width: 180px;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border: 1px solid var(--line);
+}
+.account-menu-panel a,
+.account-menu-panel button {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    text-align: left;
+    padding: 8px 12px;
+    font: inherit;
+}
+.account-menu-panel a:hover,
+.account-menu-panel button:hover {
+    background: var(--paper);
 }
 .workspace-spec-name {
     font-family: var(--display);
@@ -317,6 +386,83 @@ a { color: inherit; text-decoration: none; }
     max-width: 220px;
     padding: 2px 8px;
     font-size: 13px;
+}
+.item-picker {
+    position: relative;
+    min-width: 180px;
+}
+.item-picker-trigger {
+    width: 100%;
+    min-width: 180px;
+    max-width: 260px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    text-align: left;
+    padding: 2px 8px;
+    font-size: 13px;
+}
+.workspace-plan .item-picker {
+    min-width: 0;
+}
+.workspace-plan .item-picker-trigger {
+    max-width: none;
+    padding: 8px 10px;
+    font-size: inherit;
+}
+.item-picker-panel {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 4px);
+    z-index: 30;
+    min-width: 260px;
+    width: 100%;
+    background: #fff;
+    border: 1px solid var(--line);
+}
+.item-picker-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 8px;
+}
+.item-picker-row.active {
+    background: var(--paper);
+}
+.item-picker-name {
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    text-align: left;
+    padding: 4px 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.item-picker-row .linkish {
+    font-size: 12px;
+}
+.item-picker-empty,
+.item-picker-new {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-top: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 13px;
+}
+.item-picker-empty {
+    color: var(--muted);
+    border-top: 0;
+}
+.item-picker-new:hover,
+.item-picker-name:hover {
+    color: var(--copper);
 }
 .workspace-spec-meta label {
     margin: 0;
