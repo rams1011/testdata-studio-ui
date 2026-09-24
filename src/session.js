@@ -25,19 +25,37 @@ export function clearSession() {
   sessionStorage.removeItem(TENANT_KEY);
 }
 
+export function studioEdition(session, config) {
+  const raw = session?.edition || config?.edition;
+  if (raw) {
+    return String(raw).toLowerCase();
+  }
+  return "datacenter";
+}
+
+export function isAuthEnabled(session, config) {
+  const edition = studioEdition(session, config);
+  return edition === "saas" || edition === "datacenter";
+}
+
+export function isBillingEnabled(session, config) {
+  return studioEdition(session, config) === "saas";
+}
+
 export function canManageMembers(session) {
-  if (!session?.saas) return false;
+  if (!isAuthEnabled(session)) return false;
   const role = session?.tenant?.role;
   return role === "OWNER" || role === "ADMIN";
 }
 
 export function isSaasAdmin(session) {
-  return Boolean(session?.saas && session?.saasAdmin);
+  return Boolean(isAuthEnabled(session) && session?.saasAdmin);
 }
 
 export function isWorkspaceReady(session) {
-  if (!session?.saas) return true;
+  if (!isAuthEnabled(session)) return true;
   if (!session?.authenticated) return false;
+  if (!isBillingEnabled(session)) return true;
   if (session.subscription && session.subscription.writable === false) return false;
   return session.tenant?.ready !== false;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { API_DISPLAY, Api } from "../api";
-import { canManageMembers, clearSession, isWorkspaceReady, saveSession, subscriptionBanner } from "../session";
+import { canManageMembers, clearSession, isAuthEnabled, isBillingEnabled, isWorkspaceReady, saveSession, subscriptionBanner } from "../session";
 import { useToast } from "../components/Toast";
 import LabelField, { specLabel, uniqueLabels } from "../components/LabelField";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
@@ -41,11 +41,11 @@ export default function LoadSpecPage() {
     async function loadHome() {
       try {
         const config = await Api.config();
-        const saas = config?.saas === "true" || config?.saas === true;
+        const saas = isAuthEnabled(null, config);
         const session = await Api.session();
         if (cancelled) return;
         if (saas && !session?.authenticated) {
-          setBackend({ status: "ok", config, specs: [], session, saas: true });
+          navigate("/login", { replace: true, state: { from: "/" } });
           return;
         }
         if (session?.tenant?.id) {
@@ -63,14 +63,14 @@ export default function LoadSpecPage() {
     }
     loadHome();
     function onUnauthorized() {
-      loadHome();
+      navigate("/login", { replace: true, state: { from: "/" } });
     }
     window.addEventListener("testdata:unauthorized", onUnauthorized);
     return () => {
       cancelled = true;
       window.removeEventListener("testdata:unauthorized", onUnauthorized);
     };
-  }, []);
+  }, [navigate]);
 
   loadingRef.current = loading;
 
@@ -306,13 +306,14 @@ export default function LoadSpecPage() {
   }
 
   const apiDown = backend.status === "down";
-  const saasOn = Boolean(backend.saas || backend.session?.saas);
+  const saasOn = isAuthEnabled(backend.session, backend.config) || Boolean(backend.saas);
+  const billingOn = isBillingEnabled(backend.session, backend.config);
   const signedIn = saasOn && Boolean(backend.session?.authenticated || backend.session?.account);
   const saasLocked = saasOn && !signedIn;
   const workspacePending = signedIn && !isWorkspaceReady(backend.session);
   const studioOpen = signedIn && isWorkspaceReady(backend.session);
   const showAdmin = studioOpen && canManageMembers(backend.session);
-  const showSubscriptions = signedIn;
+  const showSubscriptions = signedIn && billingOn;
 
   return (
     <div className="hero">
@@ -331,7 +332,7 @@ export default function LoadSpecPage() {
         and export JSON or Excel for api-automation.
       </p>
 
-      {backend.saas && signedIn ? (
+      {saasOn && signedIn ? (
         <div className="workspace-bar-home">
           <label className="hint" htmlFor="workspace-select">Workspace</label>
           <select
@@ -359,7 +360,9 @@ export default function LoadSpecPage() {
         {backend.status === "checking" && "Connecting to the studio API…"}
         {backend.status === "ok" && saasLocked && (
           <>
-            This Studio is hosted as SaaS. Sign in to open specs for your workspace.
+            {billingOn
+              ? "This Studio is hosted as SaaS. Sign in to open specs for your workspace."
+              : "This Studio requires sign in. Use the account your administrator created."}
             <div className="actions" style={{ marginTop: 12 }}>
               <Link className="btn primary" to="/login">Sign in</Link>
             </div>
@@ -369,8 +372,7 @@ export default function LoadSpecPage() {
           <>
             {subscriptionBanner(backend.session)
               || `${backend.session.tenant?.name || "This workspace"} is read-only until the organization plan is active.`}
-            {" "}
-            <Link to="/subscriptions">View plan</Link>
+            {billingOn ? <>{" "}<Link to="/subscriptions">View plan</Link></> : null}
           </>
         )}
         {backend.status === "ok" && !saasLocked && !workspacePending && (

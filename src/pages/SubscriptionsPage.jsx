@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Api } from "../api";
-import { clearSession, isSaasAdmin, saveSession } from "../session";
+import { clearSession, isBillingEnabled, isSaasAdmin, saveSession } from "../session";
 import { useToast } from "../components/Toast";
 
 function usage(used, limit) {
@@ -164,7 +164,7 @@ export default function SubscriptionsPage() {
     );
   }
 
-  if (session && session.saas === false) {
+  if (session && (session.saas === false || !isBillingEnabled(session))) {
     return <Navigate to="/" replace />;
   }
 
