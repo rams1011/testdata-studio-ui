@@ -297,16 +297,6 @@ a { color: inherit; text-decoration: none; }
     background: #fff;
     border-bottom: 1px solid var(--line);
 }
-.workspace-home {
-    display: inline-block;
-    color: var(--copper);
-    font-size: 13px;
-    white-space: nowrap;
-}
-.workspace-home:hover {
-    color: var(--copper-dark);
-    text-decoration: underline;
-}
 .account-menu {
     position: relative;
     margin-left: auto;
