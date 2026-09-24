@@ -1113,6 +1113,32 @@ a { color: inherit; text-decoration: none; }
     margin-top: 8px;
 }
 .jsonpath-add input { flex: 1; }
+.header-extra-row,
+.header-add {
+    display: grid;
+    grid-template-columns: minmax(8rem, 0.75fr) minmax(0, 1.4fr) auto;
+    gap: 8px;
+    align-items: start;
+    margin-bottom: 10px;
+}
+.header-add {
+    margin-top: 4px;
+}
+.header-extra-row input,
+.header-add input {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: var(--radius);
+    padding: 8px 10px;
+}
+@media (max-width: 720px) {
+    .header-extra-row,
+    .header-add {
+        grid-template-columns: 1fr;
+    }
+}
 
 .extract-section { margin: 14px 0 8px; color: #696969; }
 .extract-row {
