@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, useParams } from "react-router-dom";
+import { NavLink, useParams } from "react-router-dom";
 import { Api } from "../api";
 import { useToast } from "./Toast";
 import AccountMenu from "./AccountMenu";
@@ -398,7 +398,6 @@ export default function WorkspaceBar({
 
   return (
     <header className="workspace-bar">
-      <Link to="/" className="workspace-home">All specs</Link>
       <button
         type="button"
         className="workspace-spec-name"
