@@ -1,4 +1,5 @@
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import RequireAuth from "./components/RequireAuth";
 import LoadSpecPage from "./pages/LoadSpecPage";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
@@ -10,20 +11,25 @@ import ExportPage from "./pages/ExportPage";
 import HistoryPage from "./pages/HistoryPage";
 
 const router = createBrowserRouter([
-  { path: "/", element: <LoadSpecPage /> },
   { path: "/login", element: <LoginPage /> },
-  { path: "/admin", element: <AdminPage /> },
-  { path: "/subscriptions", element: <SubscriptionsPage /> },
   {
-    path: "/s/:specId",
-    element: <StudioLayout />,
+    element: <RequireAuth />,
     children: [
-      { index: true, element: <FirstOperationRedirect /> },
-      { path: "op/:operationKey", element: <OperationPage /> },
-      { path: "op/:operationKey/case/:caseId", element: <OperationPage /> },
-      { path: "cases", element: <CasesPage /> },
-      { path: "history", element: <HistoryPage /> },
-      { path: "export", element: <ExportPage /> }
+      { path: "/", element: <LoadSpecPage /> },
+      { path: "/admin", element: <AdminPage /> },
+      { path: "/subscriptions", element: <SubscriptionsPage /> },
+      {
+        path: "/s/:specId",
+        element: <StudioLayout />,
+        children: [
+          { index: true, element: <FirstOperationRedirect /> },
+          { path: "op/:operationKey", element: <OperationPage /> },
+          { path: "op/:operationKey/case/:caseId", element: <OperationPage /> },
+          { path: "cases", element: <CasesPage /> },
+          { path: "history", element: <HistoryPage /> },
+          { path: "export", element: <ExportPage /> }
+        ]
+      }
     ]
   }
 ]);

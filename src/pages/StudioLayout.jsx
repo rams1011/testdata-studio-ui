@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
-import { canManageMembers, isWorkspaceReady, clearSession } from "../session";
+import { canManageMembers, isBillingEnabled, isWorkspaceReady, clearSession } from "../session";
 import Sidebar, { reloadSpecToast } from "../components/Sidebar";
 import WorkspaceBar from "../components/WorkspaceBar";
 import AddApiModal from "../components/AddApiModal";
@@ -39,6 +39,10 @@ export default function StudioLayout() {
       .then((next) => {
         if (cancelled) return;
         setSession(next);
+        if (next?.saas && !next?.authenticated) {
+          navigate("/login", { replace: true, state: { from: location.pathname } });
+          return;
+        }
         if (next?.saas && next?.authenticated && next.tenant?.ready === false) {
           navigate("/", { replace: true });
         }
@@ -54,7 +58,7 @@ export default function StudioLayout() {
       cancelled = true;
       window.removeEventListener("testdata:unauthorized", onUnauthorized);
     };
-  }, [navigate]);
+  }, [navigate, location.pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,7 +268,7 @@ export default function StudioLayout() {
             onEnvironmentsChanged={() => setEnvEpoch((current) => current + 1)}
             account={session?.authenticated ? session.account : null}
             canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
-            canManageSubscriptions={Boolean(session?.saas && session?.authenticated)}
+            canManageSubscriptions={Boolean(session?.saas && session?.authenticated && isBillingEnabled(session))}
             onSignOut={session?.saas && session?.authenticated ? signOut : null}
           />
         ) : null}
