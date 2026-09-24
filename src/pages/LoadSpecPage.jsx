@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { API_DISPLAY, Api } from "../api";
 import { canManageMembers, clearSession, isAuthEnabled, isBillingEnabled, isWorkspaceReady, saveSession, subscriptionBanner } from "../session";
+import AccountMenu from "../components/AccountMenu";
 import { useToast } from "../components/Toast";
 import LabelField, { specLabel, uniqueLabels } from "../components/LabelField";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
@@ -320,11 +321,12 @@ export default function LoadSpecPage() {
       <div className="hero-head">
         <h1>Test Data Studio</h1>
         {signedIn ? (
-          <div className="hero-actions">
-            {showSubscriptions ? <Link className="btn" to="/subscriptions">Plan</Link> : null}
-            {showAdmin ? <Link className="btn" to="/admin">Admin</Link> : null}
-            <button type="button" className="btn" onClick={signOut}>Sign out</button>
-          </div>
+          <AccountMenu
+            account={backend.session?.account}
+            canManage={showAdmin}
+            canManageSubscriptions={showSubscriptions}
+            onSignOut={signOut}
+          />
         ) : null}
       </div>
       <p>
@@ -350,9 +352,6 @@ export default function LoadSpecPage() {
               <option value={NEW_WORKSPACE_VALUE}>New workspace…</option>
             ) : null}
           </select>
-          {backend.session.account?.email ? (
-            <span className="hint">{backend.session.account.email}</span>
-          ) : null}
         </div>
       ) : null}
 
