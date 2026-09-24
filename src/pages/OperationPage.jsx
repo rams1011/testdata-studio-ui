@@ -182,11 +182,8 @@ export default function OperationPage() {
   const visibleParamGroups = useMemo(() => ({
     path: withImportedParams(paramGroups.path, form?.pathParams, "path"),
     query: withImportedParams(paramGroups.query, form?.queryParams, "query"),
-    header: withImportedParams(paramGroups.header, form?.headers, "header"),
     cookie: withImportedParams(paramGroups.cookie, form?.cookieParams, "cookie")
   }), [paramGroups, form]);
-
-  const showParameters = Object.values(visibleParamGroups).some((items) => items.length);
 
   const extractOptions = useMemo(
     () => collectPlanExtracts(planCases, boundCaseId),
@@ -598,20 +595,22 @@ export default function OperationPage() {
             )}
           </div>
 
-          {showParameters ? (
-            <div className="card" style={{ marginTop: 16 }}>
-              <h3>Parameters</h3>
-              <p className="hint">
-                {extractOptions.length
-                  ? "Choose an extracted field from an earlier case, or type a literal value."
-                  : "No extracted fields in this plan yet. On another case, pick fields under Extract for later cases."}
-              </p>
-              <ParamGroup label="Path" parameters={visibleParamGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
-              <ParamGroup label="Query" parameters={visibleParamGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
-              <ParamGroup label="Headers" parameters={visibleParamGroups.header} values={form.headers} onChange={(headers) => setForm({ ...form, headers })} />
-              <ParamGroup label="Cookies" parameters={visibleParamGroups.cookie} values={form.cookieParams} onChange={(cookieParams) => setForm({ ...form, cookieParams })} />
-            </div>
-          ) : null}
+          <div className="card" style={{ marginTop: 16 }}>
+            <h3>Parameters</h3>
+            <p className="hint">
+              {extractOptions.length
+                ? "Choose an extracted field from an earlier case, or type a literal value."
+                : "No extracted fields in this plan yet. On another case, pick fields under Extract for later cases."}
+            </p>
+            <ParamGroup label="Path" parameters={visibleParamGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
+            <ParamGroup label="Query" parameters={visibleParamGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
+            <HeaderParamGroup
+              specParameters={paramGroups.header}
+              values={form.headers}
+              onChange={(headers) => setForm({ ...form, headers })}
+            />
+            <ParamGroup label="Cookies" parameters={visibleParamGroups.cookie} values={form.cookieParams} onChange={(cookieParams) => setForm({ ...form, cookieParams })} />
+          </div>
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Request body{operation.requestBody?.required ? <span className="req"> *</span> : null}</h3>
@@ -942,6 +941,179 @@ function withImportedParams(parameters, values, location) {
     list.push({ name, in: location, schema: { type: "string" }, description: "From curl" });
   });
   return list;
+}
+
+const MANAGED_HEADERS = new Set([
+  "content-type", "content-length", "host", "connection", "accept-encoding",
+  "content-encoding", "transfer-encoding"
+]);
+
+function HeaderParamGroup({ specParameters, values, onChange }) {
+  const specParams = specParameters || [];
+  const specNames = new Set(specParams.map((item) => item.name));
+  const extras = Object.entries(values || {}).filter(([name]) => name && !specNames.has(name));
+  const [draftName, setDraftName] = useState("");
+  const [draftValue, setDraftValue] = useState("");
+  const [hint, setHint] = useState("");
+
+  function setHeader(name, value) {
+    onChange({ ...(values || {}), [name]: value });
+  }
+
+  function renameExtra(oldName, nextName) {
+    const trimmed = String(nextName || "").trim();
+    if (!trimmed || trimmed === oldName) {
+      return Boolean(trimmed);
+    }
+    if (MANAGED_HEADERS.has(trimmed.toLowerCase())) {
+      setHint("Content-Type is the field above. Host and similar headers are not stored on the case.");
+      return false;
+    }
+    const clash = Object.keys(values || {}).some(
+      (key) => key !== oldName && key.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (clash || specNames.has(trimmed)) {
+      setHint(`Header ${trimmed} is already listed.`);
+      return false;
+    }
+    const next = { ...(values || {}) };
+    next[trimmed] = next[oldName] ?? "";
+    delete next[oldName];
+    setHint("");
+    onChange(next);
+    return true;
+  }
+
+  function removeExtra(name) {
+    const next = { ...(values || {}) };
+    delete next[name];
+    onChange(next);
+  }
+
+  function addExtra() {
+    const name = draftName.trim();
+    if (!name) {
+      setHint("Enter a header name.");
+      return;
+    }
+    if (MANAGED_HEADERS.has(name.toLowerCase())) {
+      setHint("Content-Type is the field above. Host and similar headers are not stored on the case.");
+      return;
+    }
+    const existing = Object.keys(values || {}).find((key) => key.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setHeader(existing, draftValue);
+    } else {
+      setHeader(name, draftValue);
+    }
+    setDraftName("");
+    setDraftValue("");
+    setHint("");
+  }
+
+  return (
+    <>
+      <div className="tag-label" style={{ color: "#696969" }}>Headers</div>
+      <p className="hint">
+        Spec headers are listed first. Add extra headers for this case even if they are not in the spec.
+        Authorization is set on the environment.
+      </p>
+      {specParams.map((parameter) => (
+        isArrayParam(parameter) ? (
+          <ArrayParamField
+            key={parameter.name}
+            parameter={parameter}
+            values={values}
+            onChange={onChange}
+          />
+        ) : (
+          <div className="field" key={parameter.name}>
+            <label>
+              {parameter.name}{parameter.required ? " *" : ""}
+              {parameter.description ? <span className="hint">{parameter.description}</span> : null}
+            </label>
+            <ExtractValueField
+              value={values?.[parameter.name] || ""}
+              placeholder={typeWatermark(parameter.schema)}
+              onChange={(next) => setHeader(parameter.name, next)}
+            />
+          </div>
+        )
+      ))}
+      {extras.map(([name, value]) => (
+        <ExtraHeaderRow
+          key={name}
+          name={name}
+          value={value}
+          onRename={renameExtra}
+          onValueChange={setHeader}
+          onRemove={removeExtra}
+        />
+      ))}
+      <div className="header-add">
+        <input
+          value={draftName}
+          placeholder="Header name, e.g. X-Request-Id"
+          aria-label="New header name"
+          onChange={(event) => setDraftName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addExtra();
+            }
+          }}
+        />
+        <ExtractValueField
+          value={draftValue}
+          placeholder="Value"
+          ariaLabel="New header value"
+          onChange={setDraftValue}
+        />
+        <button type="button" className="btn" onClick={addExtra}>Add header</button>
+      </div>
+      {hint ? <p className="hint">{hint}</p> : null}
+    </>
+  );
+}
+
+function ExtraHeaderRow({ name, value, onRename, onValueChange, onRemove }) {
+  const [nameDraft, setNameDraft] = useState(name);
+  useEffect(() => {
+    setNameDraft(name);
+  }, [name]);
+
+  return (
+    <div className="header-extra-row">
+      <input
+        value={nameDraft}
+        aria-label="Header name"
+        placeholder="Header name"
+        onChange={(event) => setNameDraft(event.target.value)}
+        onBlur={() => {
+          const trimmed = nameDraft.trim();
+          if (trimmed === name) {
+            return;
+          }
+          if (!onRename(name, trimmed)) {
+            setNameDraft(name);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <ExtractValueField
+        value={value || ""}
+        placeholder="Value"
+        ariaLabel={`${name} value`}
+        onChange={(next) => onValueChange(name, next)}
+      />
+      <button type="button" className="btn danger" onClick={() => onRemove(name)}>Remove</button>
+    </div>
+  );
 }
 
 function ParamGroup({ label, parameters, values, onChange }) {
