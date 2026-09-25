@@ -330,7 +330,7 @@ export default function LoadSpecPage() {
         ) : null}
       </div>
       <p>
-        Open an API spec or add REST APIs without Swagger, generate test cases, import a collection,
+        Open an API spec or add REST APIs without Swagger, build test cases, import a collection,
         and export JSON or Excel for api-automation.
       </p>
 

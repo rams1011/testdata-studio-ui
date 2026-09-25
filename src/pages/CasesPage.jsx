@@ -9,13 +9,10 @@ import { useToast } from "../components/Toast";
 
 export default function CasesPage() {
   const { specId } = useParams();
-  const { plan, planId, operations, spec, reloadPlans, reloadCases, onAddApi, importCurlAsCase, runEnvironment } = useOutletContext();
+  const { planId, operations, spec, reloadCases, onAddApi, importCurlAsCase, runEnvironment } = useOutletContext();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [cases, setCases] = useState([]);
-  const [includePositive, setIncludePositive] = useState(true);
-  const [includeNegative, setIncludeNegative] = useState(true);
-  const [includeNegativePlan, setIncludeNegativePlan] = useState(true);
   const [auth, setAuth] = useSpecAuth(specId);
   const [running, setRunning] = useState(null);
   const [runById, setRunById] = useState({});
@@ -69,47 +66,6 @@ export default function CasesPage() {
     setCases(next);
     await reloadCases?.();
     return next;
-  }
-
-  async function generate() {
-    if (!includePositive && !includeNegative) {
-      toast("Select positive or negative cases to generate", true);
-      return;
-    }
-    const planName = plan?.name || "this plan";
-    const envName = runEnvironment?.name || "the current environment";
-    const confirmed = window.confirm(
-      `Generate ${includePositive ? "positive" : ""}${includePositive && includeNegative ? " and " : ""}${includeNegative ? "negative" : ""} cases for all operations into ${planName} (${envName})? Existing case names in this environment will be skipped.`
-    );
-    if (!confirmed) return;
-    try {
-      const result = await Api.generateCases({
-        specId,
-        planId,
-        includePositive,
-        includeNegative,
-        environmentId: runEnvironment?.id
-      });
-      await refresh();
-      toast(generateToast(result));
-    } catch (error) {
-      toast(error.message, true);
-    }
-  }
-
-  async function generatePlans() {
-    try {
-      const result = await Api.generatePlans({
-        specId,
-        includeNegative: includeNegativePlan,
-        environmentId: runEnvironment?.id
-      });
-      await reloadPlans(result.smokePlan.id);
-      setCases(await Api.listCases(specId, undefined, result.smokePlan.id, runEnvironment?.id));
-      toast(generatePlansToast(result));
-    } catch (error) {
-      toast(error.message, true);
-    }
   }
 
   function remember(result) {
@@ -203,7 +159,7 @@ export default function CasesPage() {
               ? `${cases.length} case${cases.length === 1 ? "" : "s"} in ${runEnvironment?.name || "this plan"}. Click a row to add, update, or delete.`
               : spec?.manual
                 ? "Add a REST API, or paste curl. Then save a test case."
-                : "Create starter cases, or open an operation on the left and save one by hand."}
+                : "Open an operation on the left and save a case, or import from curl."}
           </p>
         </div>
         <div className="actions">
@@ -247,48 +203,21 @@ export default function CasesPage() {
           <p className="empty" style={{ paddingTop: 0 }}>
             {spec?.manual && !operations.length
               ? "Add a REST API by method and path, then save a test case. Curl also creates the API if it is missing."
-              : "Create one happy-path case per operation. Existing case names in this environment are skipped."}
+              : "Pick an operation in the sidebar, fill in request and expected response, then Save. Or import a saved collection from the home page."}
           </p>
-          {spec?.manual && !operations.length ? null : (
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={includeNegativePlan}
-              onChange={(event) => setIncludeNegativePlan(event.target.checked)}
-            />
-            Also create a Negative plan
-          </label>
-          )}
           <div className="actions" style={{ marginTop: 14 }}>
             {onAddApi ? (
               <button type="button" className="btn primary" onClick={onAddApi}>
                 Add API
               </button>
             ) : null}
-            <button type="button" className="btn" onClick={() => setImportOpen(true)}>
+            <button type="button" className={onAddApi ? "btn" : "btn primary"} onClick={() => setImportOpen(true)}>
               Import from curl
             </button>
-            {operations.length ? (
-              <button type="button" className={onAddApi ? "btn" : "btn primary"} onClick={generatePlans}>
-                Create starter cases
-              </button>
-            ) : null}
           </div>
         </div>
       ) : (
         <div className="card" style={{ marginTop: 16 }}>
-          <div className="fill-bar">
-            <span className="hint">Generate more cases for every operation in this environment (duplicates skipped)</span>
-            <label className="check">
-              <input type="checkbox" checked={includePositive} onChange={(event) => setIncludePositive(event.target.checked)} />
-              Positive
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={includeNegative} onChange={(event) => setIncludeNegative(event.target.checked)} />
-              Negative
-            </label>
-            <button type="button" className="btn" onClick={generate}>Generate</button>
-          </div>
           <div className="fill-bar">
             <input
               type="search"
@@ -420,37 +349,4 @@ function caseUpdate(item, patch, environmentId) {
     environmentId,
     ...patch
   };
-}
-
-export function generateToast(result) {
-  const created = result?.created ?? 0;
-  const skipped = result?.skipped ?? 0;
-  if (created === 0 && skipped === 0) {
-    return "No cases were generated from this schema";
-  }
-  if (created === 0) {
-    return `No new cases (${skipped} already exist)`;
-  }
-  return skipped
-    ? `Created ${created} cases (${skipped} skipped as duplicates)`
-    : `Created ${created} cases`;
-}
-
-export function generatePlansToast(result) {
-  const smokeName = result?.smokePlan?.name || "Smoke";
-  const smokeCreated = result?.smoke?.created ?? 0;
-  const smokeSkipped = result?.smoke?.skipped ?? 0;
-  let message = `${smokeName}: ${smokeCreated} happy-path cases`;
-  if (smokeSkipped) {
-    message += ` (${smokeSkipped} skipped)`;
-  }
-  if (result?.negativePlan) {
-    const negativeCreated = result?.negative?.created ?? 0;
-    const negativeSkipped = result?.negative?.skipped ?? 0;
-    message += `. ${result.negativePlan.name}: ${negativeCreated} negative cases`;
-    if (negativeSkipped) {
-      message += ` (${negativeSkipped} skipped)`;
-    }
-  }
-  return message;
 }

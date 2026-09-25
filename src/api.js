@@ -422,13 +422,6 @@ export const Api = {
     );
   },
 
-  generateCases(payload) {
-    return request("/api/testdata/generate", { method: "POST", body: JSON.stringify(payload) });
-  },
-
-  generatePlans(payload) {
-    return request("/api/testdata/generate-plans", { method: "POST", body: JSON.stringify(payload) });
-  },
 
   runCase(id, auth, environmentId) {
     return request(`/api/testdata/${encodeURIComponent(id)}/run`, {
