@@ -3,24 +3,18 @@ import { Link, useNavigate } from "react-router-dom";
 import { API_DISPLAY, Api } from "../api";
 import { canManageMembers, clearSession, isAuthEnabled, isBillingEnabled, isWorkspaceReady, saveSession, subscriptionBanner } from "../session";
 import AccountMenu from "../components/AccountMenu";
+import AddSpecModal from "../components/AddSpecModal";
 import { useToast } from "../components/Toast";
-import LabelField, { specLabel, uniqueLabels } from "../components/LabelField";
+import { groupSpecs, touchRecentSpec } from "../specCatalog";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
 import { importCollectionToast } from "./ExportPage";
 
 export default function LoadSpecPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [url, setUrl] = useState("");
-  const [name, setName] = useState("");
-  const [label, setLabel] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [paste, setPaste] = useState("");
-  const [source, setSource] = useState("url");
   const [query, setQuery] = useState("");
-  const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [addSpecSource, setAddSpecSource] = useState(null);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
@@ -30,9 +24,7 @@ export default function LoadSpecPage() {
   const reloadFileRef = useRef(null);
   const reloadTargetRef = useRef(null);
   const importFileRef = useRef(null);
-  const nameRef = useRef(null);
   const workspaceNameRef = useRef(null);
-  const addButtonRef = useRef(null);
   const workspaceSelectRef = useRef(null);
   const loadingRef = useRef(false);
   const workspaceBusyRef = useRef(false);
@@ -75,24 +67,6 @@ export default function LoadSpecPage() {
 
   loadingRef.current = loading;
 
-  useEffect(() => {
-    if (!adding) return undefined;
-    nameRef.current?.focus();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    function onKey(event) {
-      if (event.key === "Escape" && !loadingRef.current) {
-        setAdding(false);
-      }
-    }
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previousOverflow;
-      addButtonRef.current?.focus();
-    };
-  }, [adding]);
-
   workspaceBusyRef.current = workspaceBusy;
 
   useEffect(() => {
@@ -119,64 +93,13 @@ export default function LoadSpecPage() {
     return haystack.includes(query.trim().toLowerCase());
   });
 
-  function requireName(file) {
-    const trimmed = name.trim() || nameFromFile(file);
-    if (!trimmed) {
-      toast("Give this spec a unique name first", true);
-      return null;
-    }
-    if (!name.trim() && trimmed) {
-      setName(trimmed);
-    }
-    return trimmed;
-  }
-
-  async function load() {
-    const specName = requireName();
-    if (!specName) return;
-    if (source === "url" && !url.trim()) {
-      toast("Enter a spec URL or file path", true);
-      return;
-    }
-    if (source === "paste" && !paste.trim()) {
-      toast("Paste OpenAPI JSON or YAML", true);
-      return;
-    }
-    if (source === "file") {
-      toast("Drop a file, or choose File below", true);
-      return;
-    }
-    setLoading(true);
-    try {
-      const spec = await Api.loadSpec({
-        name: specName,
-        label: label.trim(),
-        location: source === "url" ? (url.trim() || null) : null,
-        content: source === "paste" ? (paste.trim() || null) : null,
-        baseUrl: baseUrl.trim() || null,
-        manual: source === "rest" ? true : undefined
-      });
-      navigate(source === "rest" ? `/s/${spec.specId}/cases` : `/s/${spec.specId}`, {
-        state: source === "rest" ? { addApi: true } : undefined
-      });
-    } catch (error) {
-      toast(error.message, true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function upload(file) {
-    const specName = requireName(file);
-    if (!specName) return;
-    setLoading(true);
-    try {
-      const spec = await Api.uploadSpec(file, baseUrl.trim(), specName, label.trim());
+  function onSpecCreated(spec, meta) {
+    touchRecentSpec(spec.specId);
+    refreshSpecs();
+    if (meta?.source === "rest") {
+      navigate(`/s/${spec.specId}/cases`, { state: { addApi: true } });
+    } else {
       navigate(`/s/${spec.specId}`);
-    } catch (error) {
-      toast(error.message, true);
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -186,6 +109,7 @@ export default function LoadSpecPage() {
     try {
       const imported = await Api.importCollection(file);
       sessionStorage.setItem(`testdata.plan.${imported.specId}`, imported.planId);
+      touchRecentSpec(imported.specId);
       toast(importCollectionToast(imported));
       navigate(`/s/${imported.specId}/cases`);
     } catch (error) {
@@ -412,22 +336,15 @@ export default function LoadSpecPage() {
               type="button"
               className="btn"
               disabled={workspacePending || apiDown || backend.status === "checking"}
-              onClick={() => {
-                setSource("rest");
-                setAdding(true);
-              }}
+              onClick={() => setAddSpecSource("rest")}
             >
               Add REST APIs
             </button>
             <button
-              ref={addButtonRef}
               type="button"
               className="btn primary"
               disabled={workspacePending || apiDown || backend.status === "checking"}
-              onClick={() => {
-                setSource("url");
-                setAdding(true);
-              }}
+              onClick={() => setAddSpecSource("url")}
             >
               Add spec
             </button>
@@ -459,7 +376,10 @@ export default function LoadSpecPage() {
                       <button
                         type="button"
                         className="spec-open"
-                        onClick={() => navigate(`/s/${spec.specId}`)}
+                        onClick={() => {
+                          touchRecentSpec(spec.specId);
+                          navigate(`/s/${spec.specId}`);
+                        }}
                       >
                         <div className="spec-open-title">{spec.name || spec.title}</div>
                         {spec.title && spec.title !== spec.name ? (
@@ -592,157 +512,21 @@ export default function LoadSpecPage() {
         </div>
       ) : null}
 
-      {adding && !saasLocked ? (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !loading) {
-              setAdding(false);
-            }
-          }}
-        >
-          <div
-            className="card modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-spec-title"
-          >
-            <div className="card-head">
-              <h3 id="add-spec-title">{source === "rest" ? "Add REST APIs" : "Add a spec"}</h3>
-              <button type="button" className="btn" disabled={loading} onClick={() => setAdding(false)}>
-                Cancel
-              </button>
-            </div>
-            <div className="field">
-              <label htmlFor="new-spec-name">Name <span className="req">*</span></label>
-              <input
-                id="new-spec-name"
-                ref={nameRef}
-                value={name}
-                autoComplete="off"
-                onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. HRM local"
-              />
-              <div className="hint">
-                {source === "rest"
-                  ? "Must be unique. This catalog holds REST APIs you add by method and path."
-                  : "Must be unique. This is your name for the spec — not the OpenAPI title."}
-              </div>
-            </div>
-            <LabelField
-              id="new-spec-label"
-              value={label}
-              onChange={setLabel}
-              suggestions={uniqueLabels(backend.specs)}
-            />
-            <div className="field">
-              <label>API base URL</label>
-              <input
-                value={baseUrl}
-                onChange={(event) => setBaseUrl(event.target.value)}
-                placeholder="Optional override, e.g. http://localhost:8080"
-              />
-            </div>
-            <div className="source-tabs" role="tablist">
-              {[
-                ["rest", "REST"],
-                ["url", "URL"],
-                ["file", "File"],
-                ["paste", "Paste"]
-              ].map(([id, tabLabel]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={source === id}
-                  className={`source-tab ${source === id ? "active" : ""}`}
-                  onClick={() => setSource(id)}
-                >
-                  {tabLabel}
-                </button>
-              ))}
-            </div>
-            {source === "rest" ? (
-              <p className="hint" style={{ marginTop: 0 }}>
-                Creates an empty catalog. Add GET/POST paths in Studio, then save test cases. No OpenAPI file required.
-              </p>
-            ) : null}
-            {source === "url" ? (
-              <div className="field">
-                <label>Spec URL or local file path</label>
-                <input
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  placeholder="https://petstore.swagger.io/v2/swagger.json"
-                />
-              </div>
-            ) : null}
-            {source === "paste" ? (
-              <div className="field">
-                <label>OpenAPI JSON or YAML</label>
-                <textarea
-                  value={paste}
-                  onChange={(event) => setPaste(event.target.value)}
-                  placeholder="Paste the spec here"
-                />
-              </div>
-            ) : null}
-            {source === "file" ? (
-              <div
-                className={`drop ${dragging ? "drag" : ""}`}
-                onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
-                onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-                onDragLeave={(event) => { event.preventDefault(); setDragging(false); }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  setDragging(false);
-                  const file = event.dataTransfer.files[0];
-                  if (file) upload(file);
-                }}
-              >
-                <strong>Drop a Swagger or OpenAPI file</strong>
-                <div className="hint">JSON, YAML, or YML — or choose a file</div>
-                <input
-                  type="file"
-                  accept=".json,.yaml,.yml"
-                  onChange={(event) => event.target.files[0] && upload(event.target.files[0])}
-                />
-              </div>
-            ) : (
-              <div className="actions">
-                <button type="button" className="btn primary" onClick={load} disabled={loading || apiDown}>
-                  {loading ? (source === "rest" ? "Creating…" : "Loading…") : source === "rest" ? "Create catalog" : "Load spec"}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+      {addSpecSource && !saasLocked ? (
+        <AddSpecModal
+          open={!!addSpecSource}
+          initialSource={addSpecSource}
+          labelCatalog={backend.specs}
+          apiDown={apiDown}
+          onClose={() => setAddSpecSource(null)}
+          onCreated={onSpecCreated}
+        />
       ) : null}
     </div>
   );
 }
 
 const NEW_WORKSPACE_VALUE = "__new_workspace__";
-
-function groupSpecs(specs) {
-  const groups = new Map();
-  (specs || []).forEach((spec) => {
-    const label = specLabel(spec);
-    const key = label.toLowerCase();
-    if (!groups.has(key)) {
-      groups.set(key, { title: label, items: [] });
-    }
-    groups.get(key).items.push(spec);
-  });
-  return [...groups.values()]
-    .sort((left, right) => left.title.localeCompare(right.title, undefined, { sensitivity: "base" }))
-    .map((group) => [group.title, group.items]);
-}
-
-function nameFromFile(file) {
-  if (!file?.name) return "";
-  return file.name.replace(/\.(json|ya?ml)$/i, "").replace(/[_-]+/g, " ").trim();
-}
 
 function storageLabel(type) {
   if (type === "h2") return "saved locally";
