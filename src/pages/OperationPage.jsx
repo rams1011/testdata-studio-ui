@@ -16,7 +16,6 @@ import { useToast } from "../components/Toast";
 import { collectPlanExtracts, emptyFromSchema, hasResponseBodySchema, isEffectivelyEmpty, missingRequiredSchemaFields, typeWatermark } from "../schema";
 import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
-import { generateToast } from "./CasesPage";
 import { lastOpKey } from "./StudioLayout";
 import { applyCurlImport } from "../curlImport";
 
@@ -394,23 +393,6 @@ export default function OperationPage() {
     }
   }
 
-  async function generate() {
-    try {
-      const result = await Api.generateCases({
-        specId,
-        planId,
-        operationKey: operation.key,
-        includePositive: true,
-        includeNegative: true,
-        environmentId: runEnvironment?.id
-      });
-      await refreshPlanCases();
-      toast(generateToast(result));
-    } catch (error) {
-      toast(error.message, true);
-    }
-  }
-
   async function remove(id) {
     if (!window.confirm(`Delete this case${runEnvironment?.name ? ` from ${runEnvironment.name}` : ""}?`)) {
       return;
@@ -481,9 +463,6 @@ export default function OperationPage() {
               title={tryRequestBlockers[0] || "Send the current form without saving"}
             >
               {running === "current" ? "Trying…" : "Try this request"}
-            </button>
-            <button type="button" className="btn" onClick={generate}>
-              Generate for this operation
             </button>
             <button type="button" className="btn" onClick={() => setImportOpen(true)}>
               Import from curl
@@ -687,7 +666,7 @@ export default function OperationPage() {
             <h3>{runEnvironment?.name ? `Saved in ${runEnvironment.name}` : "Saved for this operation"}</h3>
             {!cases.length ? (
               <div className="empty">
-                No cases yet. Generate for this operation, or Save the form.
+                No cases yet. Save the form to add one.
               </div>
             ) : cases.map((item) => (
               <div className="array-item" key={item.id}>

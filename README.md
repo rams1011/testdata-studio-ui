@@ -35,8 +35,6 @@ Hosting is one API setting: `TESTDATA_EDITION=local|datacenter|saas` (blank is `
 | Operation form | `GET /api/specs/{id}/operations/{key}` |
 | Save / update / delete case | `POST` `PUT` `DELETE /api/testdata` |
 | Duplicate a case into another environment | `POST /api/testdata/{id}/duplicate` |
-| Generate positive / negative cases | `POST /api/testdata/generate` |
-| Generate Smoke / Negative plans | `POST /api/testdata/generate-plans` |
 | Export collection | Choose **JSON** or **Excel** on Export, then download (`POST /api/testdata/export-collection` or `POST /api/testdata/export`; zip with `files/<caseId>/` when the plan has uploads) |
 | History | `GET` `DELETE /api/runs` |
 | List / create / update / apply / delete environments | `GET` `POST` `PUT` `DELETE /api/specs/{id}/environments` |
@@ -47,7 +45,7 @@ An environment is a named host for one spec (`local`, `int`, `prod`). It stores 
 
 ```
 Spec (employee-service)
-├── Plans (Default, Smoke, Negative)
+├── Plans (Default, or names you create)
 │   └── Cases in local / cases in int   → separate records
 └── Environments (local, int)           → host + auth
 ```
