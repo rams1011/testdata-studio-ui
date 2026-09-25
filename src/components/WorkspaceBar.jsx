@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, useParams } from "react-router-dom";
+import { NavLink, useNavigate, useParams } from "react-router-dom";
 import { Api } from "../api";
 import { useToast } from "./Toast";
 import AccountMenu from "./AccountMenu";
+import AddSpecModal from "./AddSpecModal";
 import SpecMoreMenu from "./SpecMoreMenu";
+import SpecSwitcherModal from "./SpecSwitcherModal";
+import { touchRecentSpec } from "../specCatalog";
 import EnvironmentModal from "./EnvironmentModal";
 import EnvironmentPicker from "./EnvironmentPicker";
 import ItemPicker from "./ItemPicker";
@@ -31,8 +34,13 @@ export default function WorkspaceBar({
   onSignOut
 }) {
   const { specId } = useParams();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const fileRef = useRef(null);
+  const [catalogSpecs, setCatalogSpecs] = useState([]);
+  const [addSpecOpen, setAddSpecOpen] = useState(false);
+  const [addSpecSource, setAddSpecSource] = useState("url");
+  const [specSwitcherOpen, setSpecSwitcherOpen] = useState(false);
   const [planModal, setPlanModal] = useState(null);
   const [planEditingId, setPlanEditingId] = useState("");
   const [planFormName, setPlanFormName] = useState("");
@@ -53,6 +61,35 @@ export default function WorkspaceBar({
     setSpecForm(specSettingsForm(spec));
     setSpecSettingsOpen(false);
   }, [spec.specId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Api.listSpecs()
+      .then((next) => {
+        if (!cancelled) setCatalogSpecs(next || []);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogSpecs([]);
+      });
+    return () => { cancelled = true; };
+  }, [spec.specId, spec.name, spec.title]);
+
+  useEffect(() => {
+    touchRecentSpec(specId);
+  }, [specId]);
+
+  useEffect(() => {
+    function onKey(event) {
+      const tag = event.target?.tagName?.toLowerCase();
+      const editing = tag === "input" || tag === "textarea" || tag === "select" || event.target?.isContentEditable;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k" && !editing) {
+        event.preventDefault();
+        setSpecSwitcherOpen(true);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -396,16 +433,54 @@ export default function WorkspaceBar({
     fileRef.current?.click();
   }
 
+  function openAddSpec(source = "url") {
+    setAddSpecSource(source);
+    setAddSpecOpen(true);
+  }
+
+  function selectSpec(nextSpecId) {
+    if (!nextSpecId || nextSpecId === specId) {
+      return;
+    }
+    touchRecentSpec(nextSpecId);
+    navigate(`/s/${nextSpecId}`);
+  }
+
+  function onSpecCreated(created, meta) {
+    touchRecentSpec(created.specId);
+    setCatalogSpecs((current) => {
+      const without = current.filter((item) => item.specId !== created.specId);
+      return [...without, created];
+    });
+    Api.listSpecs()
+      .then((next) => setCatalogSpecs(next || []))
+      .catch(() => {});
+    if (meta?.source === "rest") {
+      navigate(`/s/${created.specId}/cases`, { state: { addApi: true } });
+    } else {
+      navigate(`/s/${created.specId}`);
+    }
+  }
+
+  const specTitle = spec.name || spec.title || specId;
+
   return (
     <header className="workspace-bar">
-      <button
-        type="button"
-        className="workspace-spec-name"
-        title="Spec settings"
-        onClick={openSpecSettings}
-      >
-        {spec.name || spec.title}
-      </button>
+      <div className="workspace-control workspace-control-spec">
+        <span className="workspace-control-label">Spec</span>
+        <div className="workspace-spec-current">
+          <span className="workspace-spec-name" title={specTitle}>
+            {specTitle}
+          </span>
+          <button
+            type="button"
+            className="btn workspace-spec-switch"
+            onClick={() => setSpecSwitcherOpen(true)}
+          >
+            Switch…
+          </button>
+        </div>
+      </div>
       <div className="workspace-control">
         <span className="workspace-control-label">Environment</span>
         <EnvironmentPicker
@@ -501,6 +576,25 @@ export default function WorkspaceBar({
           onSave={saveSpecSettings}
           onClose={() => setSpecSettingsOpen(false)}
           onUpdateSpec={spec.manual ? undefined : chooseReloadSource}
+        />
+      ) : null}
+      {specSwitcherOpen ? (
+        <SpecSwitcherModal
+          open={specSwitcherOpen}
+          specs={catalogSpecs}
+          currentSpecId={specId}
+          onClose={() => setSpecSwitcherOpen(false)}
+          onSelect={selectSpec}
+          onNewSpec={() => openAddSpec("url")}
+        />
+      ) : null}
+      {addSpecOpen ? (
+        <AddSpecModal
+          open={addSpecOpen}
+          initialSource={addSpecSource}
+          labelCatalog={catalogSpecs}
+          onClose={() => setAddSpecOpen(false)}
+          onCreated={onSpecCreated}
         />
       ) : null}
     </header>

@@ -1375,6 +1375,197 @@ a { color: inherit; text-decoration: none; }
     max-height: calc(100vh - 80px);
     overflow: auto;
 }
+.spec-switcher {
+    width: min(640px, 100%);
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 80px);
+    overflow: visible;
+}
+.spec-switcher-field {
+    position: relative;
+    margin-top: 4px;
+    z-index: 2;
+}
+.spec-switcher-input {
+    display: block;
+    width: 100%;
+    height: 40px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #fff;
+    font: inherit;
+    font-size: 14px;
+    line-height: 40px;
+    color: var(--ink);
+    resize: none;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.spec-switcher-input:focus {
+    outline: 2px solid rgba(180, 83, 9, 0.35);
+    outline-offset: 0;
+    border-color: var(--copper);
+}
+.spec-switcher-suggest {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    max-height: min(320px, 40vh);
+    overflow: auto;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgba(23, 32, 42, 0.12);
+}
+.spec-switcher-suggest-empty {
+    padding: 12px 14px;
+    color: var(--muted);
+    font-size: 13px;
+}
+.spec-switcher-suggest-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    color: var(--ink);
+    position: relative;
+}
+.spec-switcher-suggest-row:last-child {
+    border-bottom: 0;
+}
+.spec-switcher-suggest-row:hover,
+.spec-switcher-suggest-row.active {
+    background: var(--paper);
+}
+.spec-switcher-suggest-row.current .spec-switcher-suggest-title {
+    color: var(--copper);
+}
+.spec-switcher-suggest-title {
+    font-weight: 700;
+    font-family: var(--display);
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.spec-switcher-suggest-meta {
+    flex: 1 1 100%;
+    font-size: 12px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.spec-switcher-suggest-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 10px;
+    color: var(--muted);
+    font-family: var(--button);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.spec-switcher-browse {
+    margin-top: 14px;
+    max-height: min(36vh, 320px);
+    overflow: auto;
+}
+.spec-switcher-browse-hint {
+    margin: 0 0 10px;
+}
+.spec-switcher-section-title {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-family: var(--button);
+    color: var(--muted);
+    margin-bottom: 6px;
+}
+.spec-switcher-row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #fff;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    position: relative;
+    font: inherit;
+    color: var(--ink);
+}
+.spec-switcher-row:hover,
+.spec-switcher-row.active {
+    border-color: var(--copper);
+    background: var(--paper);
+}
+.spec-switcher-row.current {
+    border-color: var(--copper);
+}
+.spec-switcher-row-title {
+    font-weight: 700;
+    font-family: var(--display);
+    padding-right: 72px;
+}
+.spec-switcher-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--button);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.spec-switcher-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+}
+.spec-switcher-empty {
+    padding: 24px 8px;
+}
+.workspace-spec-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    max-width: min(320px, 42vw);
+}
+.workspace-spec-current .workspace-spec-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--display);
+    font-size: 15px;
+    font-weight: 700;
+}
+.workspace-spec-switch {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    font-size: 13px;
+}
 .spec-group {
     border: 1px solid var(--line);
     border-radius: var(--radius);
