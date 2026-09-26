@@ -183,11 +183,11 @@ export default function CasesPage() {
           </p>
         </div>
         <div className="actions">
-          <button type="button" className="btn" onClick={() => setImportOpen(true)}>
-            Import from curl
-          </button>
           {cases.length ? (
             <>
+              <button type="button" className="btn" onClick={() => setImportOpen(true)}>
+                Import from curl
+              </button>
               <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/export`)}>
                 Export
               </button>
