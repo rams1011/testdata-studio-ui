@@ -448,7 +448,7 @@ export default function WorkspaceBar({
       return;
     }
     touchRecentSpec(nextSpecId);
-    navigate(`/s/${nextSpecId}`);
+    navigate(`/s/${nextSpecId}/cases`);
   }
 
   function onSpecCreated(created, meta) {
@@ -463,7 +463,7 @@ export default function WorkspaceBar({
     if (meta?.source === "rest") {
       navigate(`/s/${created.specId}/cases`, { state: { addApi: true } });
     } else {
-      navigate(`/s/${created.specId}`);
+      navigate(`/s/${created.specId}/cases`);
     }
   }
 
