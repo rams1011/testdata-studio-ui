@@ -20,7 +20,18 @@ import { applyCurlImport } from "../curlImport";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
-  const { spec, planId, operations, importCurlAsCase, deleteManualOperation, onSpecUpdated, runEnvironment, envEpoch, onEnvironmentsChanged } = useOutletContext();
+  const {
+    spec,
+    planId,
+    operations,
+    importCurlAsCase,
+    deleteManualOperation,
+    onSpecUpdated,
+    runEnvironment,
+    environmentReady,
+    envEpoch,
+    onEnvironmentsChanged
+  } = useOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -654,6 +665,8 @@ export default function OperationPage() {
             specId={specId}
             planId={planId}
             caseId={boundCaseId || undefined}
+            environmentId={runEnvironment?.id}
+            environmentReady={environmentReady}
             refreshKey={historyKey}
           />
           <RunResultPanel result={runResult} />

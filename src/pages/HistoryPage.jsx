@@ -22,10 +22,11 @@ function byTime(left, right) {
 
 export default function HistoryPage() {
   const { specId } = useParams();
-  const { plans } = useOutletContext();
+  const { plans, planId, runEnvironment, environmentReady } = useOutletContext();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [runs, setRuns] = useState([]);
+  const [environments, setEnvironments] = useState([]);
   const [detail, setDetail] = useState(null);
   const [selectedResultId, setSelectedResultId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -33,6 +34,7 @@ export default function HistoryPage() {
   const [picks, setPicks] = useState([]);
   const [compare, setCompare] = useState(null);
   const [planFilter, setPlanFilter] = useState(() => searchParams.get("planId") || "");
+  const [environmentFilter, setEnvironmentFilter] = useState(() => searchParams.get("environmentId") || "");
   const [caseFilter, setCaseFilter] = useState(() => searchParams.get("caseId") || "");
   const [outcome, setOutcome] = useState(() => searchParams.get("outcome") || "");
   const [trigger, setTrigger] = useState(() => searchParams.get("trigger") || "");
@@ -50,11 +52,40 @@ export default function HistoryPage() {
     if (!specId) {
       return;
     }
+    Api.listEnvironments(specId)
+      .then((next) => setEnvironments(next || []))
+      .catch(() => setEnvironments([]));
+  }, [specId]);
+
+  useEffect(() => {
+    if (searchParams.get("planId")) {
+      return;
+    }
+    if (planId) {
+      setPlanFilter(planId);
+    }
+  }, [planId, searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get("environmentId")) {
+      return;
+    }
+    if (environmentReady && runEnvironment?.id) {
+      setEnvironmentFilter(runEnvironment.id);
+    }
+  }, [runEnvironment?.id, environmentReady, searchParams]);
+
+  useEffect(() => {
+    if (!specId) {
+      return;
+    }
     let cancelled = false;
     setLoading(true);
+    setRuns([]);
     Api.listRuns({
       specId,
       planId: planFilter || undefined,
+      environmentId: environmentFilter || undefined,
       caseId: caseFilter || undefined,
       outcome: outcome || undefined,
       trigger: trigger || undefined,
@@ -79,7 +110,7 @@ export default function HistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [specId, planFilter, caseFilter, outcome, trigger, toast]);
+  }, [specId, planFilter, environmentFilter, caseFilter, outcome, trigger, toast]);
 
   useEffect(() => {
     if (!selectedRunId) {
@@ -296,6 +327,15 @@ export default function HistoryPage() {
             <option value="">All plans</option>
             {(plans || []).map((plan) => (
               <option key={plan.id} value={plan.id}>{plan.name}</option>
+            ))}
+          </select>
+          <select value={environmentFilter} onChange={(event) => {
+            clearOpenedRun();
+            setEnvironmentFilter(event.target.value);
+          }}>
+            <option value="">All environments</option>
+            {environments.map((environment) => (
+              <option key={environment.id} value={environment.id}>{environment.name}</option>
             ))}
           </select>
           <select value={outcome} onChange={(event) => {

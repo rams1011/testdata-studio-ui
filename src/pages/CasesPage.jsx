@@ -199,7 +199,13 @@ export default function CasesPage() {
         </div>
       </div>
       <AuthSettings auth={auth} onChange={setAuth} environment={runEnvironment} />
-      <LastRunsStrip specId={specId} planId={planId} refreshKey={historyKey} />
+      <LastRunsStrip
+        specId={specId}
+        planId={planId}
+        environmentId={runEnvironment?.id}
+        environmentReady={environmentReady}
+        refreshKey={historyKey}
+      />
       {authCue ? (
         <div className="status-banner down" style={{ marginTop: 16 }}>
           API returned 401. Add run authentication if this endpoint needs login.

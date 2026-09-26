@@ -3,16 +3,30 @@ import { Link } from "react-router-dom";
 import { Api } from "../api";
 import { formatRunTime, runCounts, runTone, triggerLabel } from "../runHistory";
 
-export default function LastRunsStrip({ specId, planId, caseId, refreshKey = 0 }) {
+export default function LastRunsStrip({
+  specId,
+  planId,
+  caseId,
+  environmentId,
+  environmentReady = true,
+  refreshKey = 0
+}) {
   const [runs, setRuns] = useState([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!specId) {
+    if (!specId || !planId || !environmentReady) {
+      setRuns([]);
+      setError("");
+      setLoading(false);
       return;
     }
     let cancelled = false;
-    Api.listRuns({ specId, planId, caseId, limit: 5 })
+    setRuns([]);
+    setError("");
+    setLoading(true);
+    Api.listRuns({ specId, planId, caseId, environmentId, limit: 5 })
       .then((next) => {
         if (!cancelled) {
           setRuns(next || []);
@@ -24,23 +38,38 @@ export default function LastRunsStrip({ specId, planId, caseId, refreshKey = 0 }
           setRuns([]);
           setError(caught.message);
         }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [specId, planId, caseId, refreshKey]);
+  }, [specId, planId, caseId, environmentId, environmentReady, refreshKey]);
 
-  if (error || !runs.length) {
+  if (loading || error || !runs.length) {
     return null;
   }
 
-  const query = caseId ? `caseId=${encodeURIComponent(caseId)}` : "";
+  const queryParts = [];
+  if (planId) {
+    queryParts.push(`planId=${encodeURIComponent(planId)}`);
+  }
+  if (environmentId) {
+    queryParts.push(`environmentId=${encodeURIComponent(environmentId)}`);
+  }
+  if (caseId) {
+    queryParts.push(`caseId=${encodeURIComponent(caseId)}`);
+  }
+  const query = queryParts.length ? `?${queryParts.join("&")}` : "";
 
   return (
     <div className="card last-runs">
       <div className="array-toolbar" style={{ marginBottom: 8 }}>
         <h3 style={{ margin: 0 }}>Last runs</h3>
-        <Link className="hint" to={`/s/${specId}/history${query ? `?${query}` : ""}`}>View history</Link>
+        <Link className="hint" to={`/s/${specId}/history${query}`}>View history</Link>
       </div>
       <div className="last-runs-list">
         {runs.map((run) => (
