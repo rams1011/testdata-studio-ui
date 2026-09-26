@@ -9,11 +9,19 @@ import ImportCurlModal from "../components/ImportCurlModal";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
 import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
 import LastRunsStrip from "../components/LastRunsStrip";
+import ValidationSummary from "../components/ValidationSummary";
+import {
+  blockerTitle,
+  caseSaveIssues,
+  draftRunIssues,
+  missingRequiredParamKeys,
+  paramAnchorId
+} from "../caseValidation";
 import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
 import StatusCodeField from "../components/StatusCodeField";
 import { useToast } from "../components/Toast";
-import { collectPlanExtracts, emptyFromSchema, hasResponseBodySchema, isEffectivelyEmpty, missingRequiredSchemaFields, typeWatermark } from "../schema";
+import { collectPlanExtracts, hasResponseBodySchema, normalizeRequestBodyTemplate, templateFromSchema, typeWatermark } from "../schema";
 import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { applyCurlImport } from "../curlImport";
@@ -82,9 +90,12 @@ export default function OperationPage() {
       let nextForm = existing ? formFromCase(existing) : blank.form;
       nextForm.contentType = matchedContentType(nextForm.contentType, nextOperation.requestContentTypes)
         || nextForm.contentType;
-      let nextBody = existing
-        ? decodeRequestBody(existing.requestBody, nextOperation.requestBody?.jsonSchema, nextForm.contentType)
-        : blank.requestBody;
+      let nextBody = normalizeRequestBodyTemplate(
+        existing
+          ? decodeRequestBody(existing.requestBody, nextOperation.requestBody?.jsonSchema, nextForm.contentType)
+          : blank.requestBody,
+        nextOperation.requestBody?.jsonSchema
+      );
       if (curlImport) {
         const applied = applyCurlImport({
           form: blank.form,
@@ -420,7 +431,7 @@ export default function OperationPage() {
     function onKey(event) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (form && operation && !caseSaveBlockers(form, operation, requestBody).length) {
+        if (form && operation && !caseSaveIssues(form, operation, requestBody).length) {
           save();
         }
       }
@@ -429,14 +440,27 @@ export default function OperationPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [form, operation, requestBody, caseId]);
 
-  const tryRequestBlockers = useMemo(
-    () => (form && operation ? draftRunBlockers(form, operation) : ["Form is still loading"]),
+  const tryRequestIssues = useMemo(
+    () => (form && operation ? draftRunIssues(form, operation) : []),
     [form, operation]
   );
-  const saveBlockers = useMemo(
-    () => (form && operation ? caseSaveBlockers(form, operation, requestBody) : ["Form is still loading"]),
+  const saveIssueGroups = useMemo(
+    () => (form && operation ? caseSaveIssues(form, operation, requestBody) : []),
     [form, operation, requestBody]
   );
+  const missingParamKeys = useMemo(
+    () => (form && operation ? missingRequiredParamKeys(form, operation) : new Set()),
+    [form, operation]
+  );
+  const missingSaveKeys = useMemo(() => {
+    const keys = new Set();
+    saveIssueGroups.forEach((group) => {
+      group.items.forEach((item) => keys.add(item.key));
+    });
+    return keys;
+  }, [saveIssueGroups]);
+  const saveBlocked = !form || !operation || saveIssueGroups.length > 0;
+  const tryRequestBlocked = !form || !operation || tryRequestIssues.length > 0;
 
   if (!operation || !form) {
     return <div className="empty">Loading operation schema…</div>;
@@ -465,8 +489,8 @@ export default function OperationPage() {
               type="button"
               className="btn"
               onClick={runCurrent}
-              disabled={!!running || tryRequestBlockers.length > 0}
-              title={tryRequestBlockers[0] || "Send the current form without saving"}
+              disabled={!!running || tryRequestBlocked}
+              title={blockerTitle(tryRequestIssues, "Send the current form without saving")}
             >
               {running === "current" ? "Trying…" : "Try this request"}
             </button>
@@ -485,16 +509,16 @@ export default function OperationPage() {
               type="button"
               className="btn primary"
               onClick={save}
-              disabled={saveBlockers.length > 0}
-              title={saveBlockers[0] || (boundCaseId ? "Update the saved case" : "Save the test case")}
+              disabled={saveBlocked}
+              title={blockerTitle(saveIssueGroups, boundCaseId ? "Update the saved case" : "Save the test case")}
             >
               {boundCaseId ? "Update" : "Save"}
             </button>
           </div>
-          {saveBlockers.length ? (
-            <p className="hint try-request-hint">{saveBlockers.join(". ")}.</p>
-          ) : tryRequestBlockers.length ? (
-            <p className="hint try-request-hint">{tryRequestBlockers.join(". ")}.</p>
+          {saveIssueGroups.length ? (
+            <ValidationSummary groups={saveIssueGroups} className="try-request-hint" />
+          ) : tryRequestIssues.length ? (
+            <ValidationSummary groups={tryRequestIssues} className="try-request-hint" />
           ) : null}
         </div>
       </div>
@@ -526,7 +550,14 @@ export default function OperationPage() {
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Test case</h3>
-            <Field label="Test name" required value={form.testName} onChange={(testName) => setForm({ ...form, testName })} />
+            <Field
+              id="op-field-testName"
+              label="Test name"
+              required
+              invalid={missingSaveKeys.has("testName")}
+              value={form.testName}
+              onChange={(testName) => setForm({ ...form, testName })}
+            />
             <div className="row-2">
               <Field label="Test group" value={form.testGroup} onChange={(testGroup) => setForm({ ...form, testGroup })} />
               <SelectField label="Enabled" value={form.enabled} options={["Y", "N"]} onChange={(enabled) => setForm({ ...form, enabled })} />
@@ -545,11 +576,19 @@ export default function OperationPage() {
                 onChange={(baseUrl) => setForm({ ...form, baseUrl })}
               />
             ) : null}
-            <Field label="Base URL" required value={form.baseUrl} onChange={(baseUrl) => setForm({ ...form, baseUrl })} />
-            <div className="row-3">
+            <Field
+              id="op-field-baseUrl"
+              label="Base URL"
+              required
+              invalid={missingSaveKeys.has("baseUrl")}
+              value={form.baseUrl}
+              onChange={(baseUrl) => setForm({ ...form, baseUrl })}
+            />
+            <div className="row-3" id="op-field-statusCode">
               <StatusCodeField
                 value={form.statusCode}
                 options={statusOptions}
+                invalid={missingSaveKeys.has("statusCode")}
                 onChange={(statusCode) => setForm({ ...form, statusCode })}
               />
               <SelectField
@@ -587,17 +626,39 @@ export default function OperationPage() {
                 ? "Choose an extracted field from an earlier case, or type a literal value."
                 : "No extracted fields in this plan yet. On another case, pick fields under Extract for later cases."}
             </p>
-            <ParamGroup label="Path" parameters={visibleParamGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
-            <ParamGroup label="Query" parameters={visibleParamGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
+            <ParamGroup
+              label="Path"
+              parameters={visibleParamGroups.path}
+              values={form.pathParams}
+              missingKeys={missingParamKeys}
+              onChange={(pathParams) => setForm({ ...form, pathParams })}
+            />
+            <ParamGroup
+              label="Query"
+              parameters={visibleParamGroups.query}
+              values={form.queryParams}
+              missingKeys={missingParamKeys}
+              onChange={(queryParams) => setForm({ ...form, queryParams })}
+            />
             <HeaderParamGroup
               specParameters={paramGroups.header}
               values={form.headers}
               onChange={(headers) => setForm({ ...form, headers })}
             />
-            <ParamGroup label="Cookies" parameters={visibleParamGroups.cookie} values={form.cookieParams} onChange={(cookieParams) => setForm({ ...form, cookieParams })} />
+            <ParamGroup
+              label="Cookies"
+              parameters={visibleParamGroups.cookie}
+              values={form.cookieParams}
+              missingKeys={missingParamKeys}
+              onChange={(cookieParams) => setForm({ ...form, cookieParams })}
+            />
           </div>
 
-          <div className="card" style={{ marginTop: 16 }}>
+          <div
+            className={`card${saveIssueGroups.some((group) => group.id === "body") ? " card-section-missing" : ""}`}
+            style={{ marginTop: 16 }}
+            id="op-section-request-body"
+          >
             <h3>Request body{operation.requestBody?.required ? <span className="req"> *</span> : null}</h3>
             {operation.requestBody ? (
               <RequestBodyEditor
@@ -623,7 +684,6 @@ export default function OperationPage() {
               key={`${operationKey}-${caseId || "new"}-expected`}
               resetKey={`${operationKey}-${caseId || "new"}`}
               schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
-              sample={hasResponseBodySchema(operation.response) ? operation.response.sample : null}
               value={form.expectedResponse}
               onChange={(expectedResponse) => setForm((current) => ({ ...current, expectedResponse }))}
               contentType={operation.response?.contentType || form.contentType}
@@ -713,93 +773,6 @@ export default function OperationPage() {
   );
 }
 
-function caseSaveBlockers(form, operation, requestBody) {
-  const reasons = [];
-  if (!String(form.testName || "").trim()) {
-    reasons.push("Enter a test name");
-  }
-  if (!String(form.baseUrl || "").trim()) {
-    reasons.push("Set a base URL");
-  }
-  if (!String(form.statusCode ?? "").trim()) {
-    reasons.push("Set an expected status");
-  }
-  const missingParams = missingRequiredParams(form, operation);
-  Object.entries(missingParams).forEach(([label, names]) => {
-    if (names.length) {
-      reasons.push(`Fill required ${label}: ${formatNameList(names)}`);
-    }
-  });
-  if (operation.requestBody?.jsonSchema) {
-    const body = decodeRequestBody(
-      requestBody,
-      operation.requestBody.jsonSchema,
-      form.contentType
-    );
-    const missingBody = missingRequiredSchemaFields(operation.requestBody.jsonSchema, body);
-    if (missingBody.length) {
-      reasons.push(`Fill required body fields: ${formatNameList(missingBody)}`);
-    } else if (operation.requestBody.required && isEffectivelyEmpty(body)) {
-      reasons.push("Fill the required request body");
-    }
-  } else if (operation.requestBody?.required && isEffectivelyEmpty(requestBody)) {
-    reasons.push("Fill the required request body");
-  }
-  return reasons;
-}
-
-function missingRequiredParams(form, operation) {
-  const groups = {
-    "path params": { values: form.pathParams, items: [] },
-    "query params": { values: form.queryParams, items: [] },
-    "headers": { values: form.headers, items: [] },
-    "cookies": { values: form.cookieParams, items: [] }
-  };
-  (operation.parameters || []).forEach((parameter) => {
-    const required = parameter.required || parameter.in === "path";
-    if (!required) {
-      return;
-    }
-    const key = parameter.in === "path"
-      ? "path params"
-      : parameter.in === "query"
-        ? "query params"
-        : parameter.in === "header"
-          ? "headers"
-          : parameter.in === "cookie"
-            ? "cookies"
-            : null;
-    if (!key) {
-      return;
-    }
-    if (!String(groups[key].values?.[parameter.name] || "").trim()) {
-      groups[key].items.push(parameter.name);
-    }
-  });
-  return Object.fromEntries(Object.entries(groups).map(([label, group]) => [label, group.items]));
-}
-
-function formatNameList(names) {
-  const shown = names.slice(0, 8);
-  const extra = names.length - shown.length;
-  return extra > 0 ? `${shown.join(", ")}, and ${extra} more` : shown.join(", ");
-}
-
-function draftRunBlockers(form, operation) {
-  const reasons = [];
-  if (!String(form.baseUrl || "").trim()) {
-    reasons.push("Set a base URL before trying the request");
-  }
-  const missingPath = (operation.parameters || [])
-    .filter((parameter) => parameter.in === "path")
-    .filter((parameter) => !String(form.pathParams?.[parameter.name] || "").trim())
-    .map((parameter) => parameter.name);
-  if (missingPath.length) {
-    reasons.push(`Fill required path params: ${missingPath.join(", ")}`);
-  }
-  return reasons;
-}
-
 function snapshot(form, requestBody) {
   return JSON.stringify({ form, requestBody });
 }
@@ -831,7 +804,7 @@ function blankOperationCase(operation, spec) {
   const form = formFromOperation(operation, spec);
   form.contentType = matchedContentType(form.contentType, operation.requestContentTypes) || form.contentType;
   const requestBody = decodeRequestBody(
-    emptyFromSchema(operation.requestBody?.jsonSchema) ?? {},
+    templateFromSchema(operation.requestBody?.jsonSchema) ?? {},
     operation.requestBody?.jsonSchema,
     form.contentType
   );
@@ -891,9 +864,9 @@ function mapParams(parameters, location) {
   return result;
 }
 
-function Field({ label, value, onChange, type = "text", hint, required }) {
+function Field({ id, label, value, onChange, type = "text", hint, required, invalid = false }) {
   return (
-    <div className="field">
+    <div className={`field${invalid ? " field-missing" : ""}`} id={id}>
       <label>
         {label}
         {required ? <span className="req">*</span> : null}
@@ -1103,7 +1076,7 @@ function ExtraHeaderRow({ name, value, onRename, onValueChange, onRemove }) {
   );
 }
 
-function ParamGroup({ label, parameters, values, onChange }) {
+function ParamGroup({ label, parameters, values, onChange, missingKeys = new Set() }) {
   if (!parameters.length) return null;
   return (
     <>
@@ -1114,10 +1087,15 @@ function ParamGroup({ label, parameters, values, onChange }) {
             key={parameter.name}
             parameter={parameter}
             values={values}
+            missingKeys={missingKeys}
             onChange={onChange}
           />
         ) : (
-          <div className="field" key={parameter.name}>
+          <div
+            className={`field${missingKeys.has(`${parameter.in}:${parameter.name}`) ? " field-missing" : ""}`}
+            key={parameter.name}
+            id={paramAnchorId(parameter)}
+          >
             <label>
               {parameter.name}{parameter.required || parameter.in === "path" ? " *" : ""}
               {parameter.description ? <span className="hint">{parameter.description}</span> : null}
@@ -1134,10 +1112,11 @@ function ParamGroup({ label, parameters, values, onChange }) {
   );
 }
 
-function ArrayParamField({ parameter, values, onChange }) {
+function ArrayParamField({ parameter, values, onChange, missingKeys = new Set() }) {
   const items = parseListValue(values[parameter.name]);
+  const missing = missingKeys.has(`${parameter.in}:${parameter.name}`);
   return (
-    <div className="field">
+    <div className={`field${missing ? " field-missing" : ""}`} id={paramAnchorId(parameter)}>
       <label>
         {parameter.name}{parameter.required || parameter.in === "path" ? " *" : ""}
         <span className="hint">{parameter.description || "Array — repeated query/header values"}</span>

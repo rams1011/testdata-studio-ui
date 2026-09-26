@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import { Api } from "../api";
 import ExtractValueField from "./ExtractValueField";
-import { coerce, collectFileFields, emptyFromSchema, getPath, humanize, inputType, isFileRef, matchVariantIndex, schemaType, schemaVariants, setPath, typeWatermark } from "../schema";
+import { coerce, collectFileFields, emptyFromSchema, getPath, humanize, inputType, isFileRef, matchVariantIndex, schemaType, schemaVariants, setPath, templateFromSchema, typeWatermark } from "../schema";
 
 const AllowExtractsContext = createContext(false);
 const FileCommitContext = createContext(null);
@@ -40,7 +40,7 @@ export function SchemaFilePickers({ schema, value, onChange, caseId, onEnsureCas
 }
 
 export default function SchemaForm({ schema, value, onChange, filter = "", caseId, onEnsureCase, onFileCommitted, allowExtracts = false, environmentId }) {
-  const fallback = useMemo(() => emptyFromSchema(schema) ?? {}, [schema]);
+  const fallback = useMemo(() => templateFromSchema(schema) ?? emptyFromSchema(schema) ?? {}, [schema]);
   const current = value == null ? fallback : value;
   return (
     <FileEnvironmentContext.Provider value={environmentId}>
@@ -199,7 +199,7 @@ function ArrayField({ schema, path, label, value, onChange, filter, caseId, onEn
         type="button"
         className="btn"
         onClick={() => {
-          const item = emptyFromSchema(itemSchema);
+          const item = templateFromSchema(itemSchema);
           onChange(setPath(value, path, [
             ...items,
             item === undefined ? "" : item

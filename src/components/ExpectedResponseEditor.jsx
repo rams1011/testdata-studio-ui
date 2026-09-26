@@ -1,11 +1,12 @@
 import SchemaBodyEditor from "./SchemaBodyEditor";
-import { hasResponseSchema, sampleFromSchema } from "../schema";
+import { hasResponseSchema } from "../schema";
 import { isXmlContentType, jsonToXml, looksLikeXml, xmlToJson } from "../xml";
 
-export default function ExpectedResponseEditor({ schema, sample, value, onChange, onBuilt, resetKey, contentType }) {
+export default function ExpectedResponseEditor({ schema, value, onChange, onBuilt, resetKey, contentType }) {
   const xml = isXmlContentType(contentType);
   const canBuild = hasResponseSchema(schema);
   const parsed = parseExpected(value, schema, xml);
+  const hasContent = hasExpectedResponseContent(value);
 
   function persist(next) {
     if (next == null) {
@@ -18,9 +19,14 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
     }
   }
 
-  function fillSample() {
-    const fromSchema = sampleFromSchema(schema);
-    persist(fillStringSamples(sample != null ? structuredClone(sample) : fromSchema, fromSchema));
+  function clearExpected() {
+    if (!hasContent) {
+      return;
+    }
+    if (!window.confirm("Clear the expected response body? Status-only checks will apply until you add a body again.")) {
+      return;
+    }
+    persist(null);
   }
 
   if (!canBuild) {
@@ -48,15 +54,22 @@ export default function ExpectedResponseEditor({ schema, sample, value, onChange
         jsonAria={xml ? "Expected response XML" : "Expected response JSON"}
         tabsAria="Expected response editor"
         emptyToNull
-        onFillSample={fillSample}
         extraActions={(
-          <button type="button" className="btn" onClick={() => persist(null)}>
+          <button type="button" className="btn" onClick={clearExpected} disabled={!hasContent}>
             Clear
           </button>
         )}
       />
     </div>
   );
+}
+
+function hasExpectedResponseContent(value) {
+  if (value == null) {
+    return false;
+  }
+  const text = String(value).trim();
+  return Boolean(text) && text.toUpperCase() !== "NA" && text !== "{}";
 }
 
 function parseExpected(value, schema, xml) {
@@ -95,26 +108,4 @@ function stringify(value, schema, xml) {
     return jsonToXml(value, schema);
   }
   return JSON.stringify(value, null, 2);
-}
-
-function fillStringSamples(target, fallback) {
-  if (fallback == null) {
-    return target;
-  }
-  if (typeof fallback !== "object" || Array.isArray(fallback)) {
-    if (target == null || target === "" || isEmptyObject(target)) {
-      return fallback;
-    }
-    return target;
-  }
-  const source = target && typeof target === "object" && !Array.isArray(target) ? target : {};
-  const result = { ...source };
-  Object.entries(fallback).forEach(([key, child]) => {
-    result[key] = fillStringSamples(source[key], child);
-  });
-  return result;
-}
-
-function isEmptyObject(value) {
-  return value != null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0;
 }

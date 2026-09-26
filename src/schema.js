@@ -175,6 +175,91 @@ export function sampleFromSchema(schema, name = "", options = {}) {
   return sampleString(schema, name);
 }
 
+export function schemaHasFormFields(schema) {
+  if (!schema) {
+    return false;
+  }
+  const type = schemaType(schema);
+  if (type === "union") {
+    return schemaVariants(schema).some((variant) => schemaHasFormFields(variant.schema));
+  }
+  if (type === "array") {
+    return Boolean(schema.items);
+  }
+  if ((type === "object" || type === "json") && schema.properties) {
+    return Object.keys(schema.properties).length > 0;
+  }
+  return false;
+}
+
+export function bodyJsonPlaceholder(schema) {
+  if (!schemaHasFormFields(schema)) {
+    return "Paste JSON here.";
+  }
+  const names = Object.keys(schema?.properties || {});
+  const required = (schema?.required || []).filter((name) => names.includes(name));
+  const preview = (required.length ? required : names).slice(0, 8);
+  const hidden = (required.length ? required : names).length - preview.length;
+  const lead = "Use Form to fill fields, or paste JSON here.";
+  if (!preview.length) {
+    return lead;
+  }
+  const list = preview.join(", ");
+  const extra = hidden > 0 ? `, +${hidden} more` : "";
+  if (required.length) {
+    return `${lead} Required: ${list}${extra}.`;
+  }
+  return `${lead} Fields include: ${list}${extra}.`;
+}
+
+export function templateFromSchema(schema, name = "") {
+  const type = schemaType(schema);
+  if (!schema) {
+    return {};
+  }
+  if (schema.default !== undefined) {
+    return cloneSample(schema.default);
+  }
+  if (type === "file") {
+    return null;
+  }
+  if (type === "object" || (type === "json" && schema.properties)) {
+    const value = {};
+    Object.entries(schema.properties || {}).forEach(([propertyName, property]) => {
+      const child = templateFromSchema(property, propertyName);
+      if (child !== undefined) {
+        value[propertyName] = child;
+      }
+    });
+    return value;
+  }
+  if (type === "array") {
+    return [];
+  }
+  if (type === "boolean") {
+    return null;
+  }
+  if (type === "integer" || type === "number") {
+    return null;
+  }
+  if (type === "union") {
+    const variants = schemaVariants(schema);
+    return templateFromSchema(variants[0]?.schema || { type: "object" }, name);
+  }
+  return "";
+}
+
+export function normalizeRequestBodyTemplate(body, schema) {
+  if (!schema || !schemaHasFormFields(schema)) {
+    return body ?? {};
+  }
+  const template = templateFromSchema(schema);
+  if (body == null || isEffectivelyEmpty(body)) {
+    return template;
+  }
+  return body;
+}
+
 export function emptyFromSchema(schema) {
   const type = schemaType(schema);
   if (!schema) {
