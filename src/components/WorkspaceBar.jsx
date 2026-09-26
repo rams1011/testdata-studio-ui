@@ -6,7 +6,12 @@ import AccountMenu from "./AccountMenu";
 import AddSpecModal from "./AddSpecModal";
 import SpecMoreMenu from "./SpecMoreMenu";
 import SpecSwitcherModal from "./SpecSwitcherModal";
+import LayersIcon from "./LayersIcon";
 import { touchRecentSpec } from "../specCatalog";
+
+const SWITCH_SPEC_TIP = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform)
+  ? "Switch spec (⌘K)"
+  : "Switch spec (Ctrl+K)";
 import EnvironmentModal from "./EnvironmentModal";
 import EnvironmentPicker from "./EnvironmentPicker";
 import ItemPicker from "./ItemPicker";
@@ -443,7 +448,7 @@ export default function WorkspaceBar({
       return;
     }
     touchRecentSpec(nextSpecId);
-    navigate(`/s/${nextSpecId}`);
+    navigate(`/s/${nextSpecId}/cases`);
   }
 
   function onSpecCreated(created, meta) {
@@ -458,7 +463,7 @@ export default function WorkspaceBar({
     if (meta?.source === "rest") {
       navigate(`/s/${created.specId}/cases`, { state: { addApi: true } });
     } else {
-      navigate(`/s/${created.specId}`);
+      navigate(`/s/${created.specId}/cases`);
     }
   }
 
@@ -476,8 +481,10 @@ export default function WorkspaceBar({
             type="button"
             className="btn workspace-spec-switch"
             onClick={() => setSpecSwitcherOpen(true)}
+            title={SWITCH_SPEC_TIP}
+            aria-label={SWITCH_SPEC_TIP}
           >
-            Switch…
+            <LayersIcon size={16} />
           </button>
         </div>
       </div>

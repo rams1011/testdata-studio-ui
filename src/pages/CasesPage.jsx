@@ -9,10 +9,11 @@ import { useToast } from "../components/Toast";
 
 export default function CasesPage() {
   const { specId } = useParams();
-  const { planId, operations, spec, reloadCases, onAddApi, importCurlAsCase, runEnvironment } = useOutletContext();
+  const { planId, operations, spec, reloadCases, onAddApi, importCurlAsCase, runEnvironment, environmentReady } = useOutletContext();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [auth, setAuth] = useSpecAuth(specId);
   const [running, setRunning] = useState(null);
   const [runById, setRunById] = useState({});
@@ -26,13 +27,30 @@ export default function CasesPage() {
   const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
-    if (!planId) return;
-    Api.listCases(specId, undefined, planId, runEnvironment?.id).then(setCases).catch((error) => toast(error.message, true));
+    if (!planId || !environmentReady) {
+      setLoading(true);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    Api.listCases(specId, undefined, planId, runEnvironment?.id)
+      .then((next) => {
+        if (cancelled) return;
+        setCases(next || []);
+        setLoading(false);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setCases([]);
+        setLoading(false);
+        toast(error.message, true);
+      });
     setRunById({});
     setSelectedResult(null);
     setPlanSummary(null);
     setSelected({});
-  }, [specId, planId, toast, runEnvironment?.id]);
+    return () => { cancelled = true; };
+  }, [specId, planId, toast, runEnvironment?.id, environmentReady]);
 
   const methods = useMemo(
     () => [...new Set(cases.map((item) => item.method).filter(Boolean))].sort(),
@@ -155,7 +173,9 @@ export default function CasesPage() {
         <div>
           <h2>Cases{runEnvironment?.name ? ` · ${runEnvironment.name}` : ""}</h2>
           <p className="hint" style={{ marginTop: 6 }}>
-            {cases.length
+            {loading && !cases.length
+              ? "Loading cases…"
+              : cases.length
               ? `${cases.length} case${cases.length === 1 ? "" : "s"} in ${runEnvironment?.name || "this plan"}. Click a row to add, update, or delete.`
               : spec?.manual
                 ? "Add a REST API, or paste curl. Then save a test case."
@@ -197,7 +217,9 @@ export default function CasesPage() {
         </div>
       ) : null}
       <RunResultPanel result={selectedResult} />
-      {!cases.length ? (
+      {loading && !cases.length ? (
+        <div className="empty" style={{ marginTop: 16 }}>Loading cases…</div>
+      ) : !cases.length ? (
         <div className="card start-card" style={{ marginTop: 16 }}>
           <h3>Get started</h3>
           <p className="empty" style={{ paddingTop: 0 }}>

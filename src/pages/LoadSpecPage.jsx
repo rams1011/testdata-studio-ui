@@ -99,7 +99,7 @@ export default function LoadSpecPage() {
     if (meta?.source === "rest") {
       navigate(`/s/${spec.specId}/cases`, { state: { addApi: true } });
     } else {
-      navigate(`/s/${spec.specId}`);
+      navigate(`/s/${spec.specId}/cases`);
     }
   }
 
@@ -378,7 +378,7 @@ export default function LoadSpecPage() {
                         className="spec-open"
                         onClick={() => {
                           touchRecentSpec(spec.specId);
-                          navigate(`/s/${spec.specId}`);
+                          navigate(`/s/${spec.specId}/cases`);
                         }}
                       >
                         <div className="spec-open-title">{spec.name || spec.title}</div>

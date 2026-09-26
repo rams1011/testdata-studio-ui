@@ -1563,8 +1563,14 @@ a { color: inherit; text-decoration: none; }
 }
 .workspace-spec-switch {
     flex-shrink: 0;
-    padding: 4px 10px;
-    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 8px;
+    line-height: 0;
+}
+.workspace-spec-switch svg {
+    display: block;
 }
 .spec-group {
     border: 1px solid var(--line);

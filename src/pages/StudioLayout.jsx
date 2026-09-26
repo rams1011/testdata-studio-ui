@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Api } from "../api";
 import { canManageMembers, isBillingEnabled, isWorkspaceReady, clearSession } from "../session";
 import Sidebar, { reloadSpecToast } from "../components/Sidebar";
@@ -10,10 +10,6 @@ import { operationRequestFromCurl } from "../curlImport";
 
 function planStorageKey(specId) {
   return `testdata.plan.${specId}`;
-}
-
-export function lastOpKey(specId) {
-  return `testdata.op.${specId}`;
 }
 
 export default function StudioLayout() {
@@ -30,6 +26,8 @@ export default function StudioLayout() {
   const [cases, setCases] = useState([]);
   const [envEpoch, setEnvEpoch] = useState(0);
   const [runEnvironment, setRunEnvironment] = useState(null);
+  const [environmentReady, setEnvironmentReady] = useState(false);
+  const [environmentSpecId, setEnvironmentSpecId] = useState(specId);
   const [session, setSession] = useState(null);
   const [addApiOpen, setAddApiOpen] = useState(false);
 
@@ -100,8 +98,19 @@ export default function StudioLayout() {
     navigate(location.pathname, { replace: true, state: {} });
   }, [location.state, location.pathname, navigate]);
 
+  if (environmentSpecId !== specId) {
+    setEnvironmentSpecId(specId);
+    setRunEnvironment(null);
+    setEnvironmentReady(false);
+  }
+
+  const handleEnvironmentChange = useCallback((environment) => {
+    setRunEnvironment(environment);
+    setEnvironmentReady(true);
+  }, []);
+
   useEffect(() => {
-    if (!specId || !planId) {
+    if (!specId || !planId || !environmentReady) {
       setCases([]);
       return;
     }
@@ -114,7 +123,7 @@ export default function StudioLayout() {
         if (!cancelled) setCases([]);
       });
     return () => { cancelled = true; };
-  }, [specId, planId, location.pathname, runEnvironment?.id]);
+  }, [specId, planId, location.pathname, runEnvironment?.id, environmentReady]);
 
   function selectPlan(nextPlanId) {
     setPlanId(nextPlanId);
@@ -264,7 +273,7 @@ export default function StudioLayout() {
             caseCount={cases.length}
             onSpecRenamed={handleSpecUpdated}
             envEpoch={envEpoch}
-            onEnvironmentChange={setRunEnvironment}
+            onEnvironmentChange={handleEnvironmentChange}
             onEnvironmentsChanged={() => setEnvEpoch((current) => current + 1)}
             account={session?.authenticated ? session.account : null}
             canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
@@ -292,7 +301,8 @@ export default function StudioLayout() {
               onSpecUpdated: handleSpecUpdated,
               onEnvironmentsChanged: () => setEnvEpoch((current) => current + 1),
               envEpoch,
-              runEnvironment
+              runEnvironment,
+              environmentReady
             }} />
           ) : (
             <div className="empty">Loading spec…</div>
@@ -311,10 +321,5 @@ export default function StudioLayout() {
 
 export function FirstOperationRedirect() {
   const { specId } = useParams();
-  const { operations } = useOutletContext();
-  const last = sessionStorage.getItem(lastOpKey(specId));
-  if (last && (operations || []).some((operation) => operation.key === last)) {
-    return <Navigate to={`/s/${specId}/op/${encodeURIComponent(last)}`} replace />;
-  }
   return <Navigate to={`/s/${specId}/cases`} replace />;
 }

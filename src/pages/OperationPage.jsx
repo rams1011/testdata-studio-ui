@@ -16,7 +16,6 @@ import { useToast } from "../components/Toast";
 import { collectPlanExtracts, emptyFromSchema, hasResponseBodySchema, isEffectivelyEmpty, missingRequiredSchemaFields, typeWatermark } from "../schema";
 import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
-import { lastOpKey } from "./StudioLayout";
 import { applyCurlImport } from "../curlImport";
 
 export default function OperationPage() {
@@ -43,10 +42,6 @@ export default function OperationPage() {
   const curlImportRef = useRef(location.state?.curlImport);
   const [, setCleanNonce] = useState(0);
   curlImportRef.current = location.state?.curlImport;
-
-  useEffect(() => {
-    sessionStorage.setItem(lastOpKey(specId), operationKey);
-  }, [specId, operationKey]);
 
   useEffect(() => {
     setBoundCaseId(caseId);
