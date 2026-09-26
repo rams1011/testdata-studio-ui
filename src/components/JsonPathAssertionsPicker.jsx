@@ -82,6 +82,16 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange, expe
     emit(rows.map((row) => ({ ...row, selected })));
   }
 
+  function clearSelections() {
+    if (!hasJsonPathAssertionContent(value, selectedCount)) {
+      return;
+    }
+    if (!window.confirm("Clear all JSONPath assertions? No response fields will be asserted until you select paths again.")) {
+      return;
+    }
+    setAll(false);
+  }
+
   function addCustom() {
     const path = customPath.trim();
     if (!path || path === "$" || path === "$.") {
@@ -123,6 +133,7 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange, expe
   }
 
   const selectedCount = rows.filter((row) => row.selected).length;
+  const canClear = hasJsonPathAssertionContent(value, selectedCount);
 
   return (
     <div className="field jsonpath-picker">
@@ -142,7 +153,7 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange, expe
         />
         <div className="inline-actions">
           <button type="button" className="btn" onClick={() => setAll(true)}>Select all</button>
-          <button type="button" className="btn" onClick={() => setAll(false)}>Clear</button>
+          <button type="button" className="btn" onClick={clearSelections} disabled={!canClear}>Clear</button>
         </div>
       </div>
       <div className="jsonpath-list">
@@ -180,6 +191,20 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange, expe
       />
     </div>
   );
+}
+
+function hasJsonPathAssertionContent(serialized, selectedCount) {
+  if (selectedCount > 0) {
+    return true;
+  }
+  if (serialized == null) {
+    return false;
+  }
+  const text = String(serialized).trim();
+  if (!text || text.toUpperCase() === "NA") {
+    return false;
+  }
+  return parseJsonPathAssertions(serialized).size > 0;
 }
 
 function CustomPathRow({ customPath, setCustomPath, onAdd }) {

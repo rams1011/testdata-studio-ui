@@ -183,11 +183,11 @@ export default function CasesPage() {
           </p>
         </div>
         <div className="actions">
-          <button type="button" className="btn" onClick={() => setImportOpen(true)}>
-            Import from curl
-          </button>
           {cases.length ? (
             <>
+              <button type="button" className="btn" onClick={() => setImportOpen(true)}>
+                Import from curl
+              </button>
               <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/export`)}>
                 Export
               </button>
@@ -199,7 +199,6 @@ export default function CasesPage() {
         </div>
       </div>
       <AuthSettings auth={auth} onChange={setAuth} environment={runEnvironment} />
-      <LastRunsStrip specId={specId} planId={planId} refreshKey={historyKey} />
       {authCue ? (
         <div className="status-banner down" style={{ marginTop: 16 }}>
           API returned 401. Add run authentication if this endpoint needs login.
@@ -329,6 +328,13 @@ export default function CasesPage() {
           {!visible.length ? <div className="empty">No cases match this filter.</div> : null}
         </div>
       )}
+      <LastRunsStrip
+        specId={specId}
+        planId={planId}
+        environmentId={runEnvironment?.id}
+        environmentReady={environmentReady}
+        refreshKey={historyKey}
+      />
       {importOpen ? (
         <ImportCurlModal
           operations={operations}

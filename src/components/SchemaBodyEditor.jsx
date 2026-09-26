@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import SchemaForm, { SchemaFilePickers } from "./SchemaForm";
-import { collectFileFields, mergeFileRefs, stripFileRefsForEditor } from "../schema";
+import {
+  bodyJsonPlaceholder,
+  collectFileFields,
+  mergeFileRefs,
+  schemaHasFormFields,
+  stripFileRefsForEditor,
+  templateFromSchema
+} from "../schema";
 import { jsonToXml, looksLikeXml, validateXml, xmlToJson } from "../xml";
 
 export default function SchemaBodyEditor({
@@ -20,10 +27,12 @@ export default function SchemaBodyEditor({
   format = "json",
   allowExtracts = false,
   fileUploads = false,
-  environmentId
+  environmentId,
+  defaultTab = "auto"
 }) {
   const xml = format === "xml";
-  const [mode, setMode] = useState(xml ? "xml" : "json");
+  const preferForm = schemaHasFormFields(schema);
+  const [mode, setMode] = useState(() => initialEditorMode(xml, defaultTab, preferForm));
   const [filter, setFilter] = useState("");
   const [jsonText, setJsonText] = useState("");
   const [xmlText, setXmlText] = useState("");
@@ -36,13 +45,13 @@ export default function SchemaBodyEditor({
   );
 
   useEffect(() => {
-    setMode(xml ? "xml" : "json");
+    setMode(initialEditorMode(xml, defaultTab, preferForm));
     setFilter("");
-    setJsonText(pretty(stripFileRefsForEditor(objectValue), emptyToNull));
+    setJsonText(formatJsonText(stripFileRefsForEditor(objectValue), emptyToNull));
     setXmlText(xml ? jsonToXml(stripFileRefsForEditor(value ?? objectValue), schema) : "");
     setJsonError("");
     setXmlError("");
-  }, [resetKey, emptyToNull, xml]);
+  }, [resetKey, emptyToNull, xml, preferForm, defaultTab]);
 
   useEffect(() => {
     if (xml) {
@@ -59,7 +68,7 @@ export default function SchemaBodyEditor({
     if (mode !== "json" || (jsonError && !(emptyToNull && value == null))) {
       return;
     }
-    const next = pretty(stripFileRefsForEditor(objectValue), emptyToNull);
+    const next = formatJsonText(stripFileRefsForEditor(objectValue), emptyToNull);
     setJsonText((current) => (current === next ? current : next));
   }, [value, objectValue, schema, mode, jsonError, xmlError, emptyToNull, xml]);
 
@@ -68,7 +77,7 @@ export default function SchemaBodyEditor({
   }
 
   function showJson() {
-    setJsonText(pretty(stripFileRefsForEditor(objectValue), emptyToNull));
+    setJsonText(formatJsonText(stripFileRefsForEditor(objectValue), emptyToNull));
     setJsonError("");
     setMode("json");
   }
@@ -84,7 +93,7 @@ export default function SchemaBodyEditor({
     const trimmed = text.trim();
     if (!trimmed) {
       setJsonError("");
-      onChange(mergeFileRefs(emptyToNull ? null : {}, objectValue));
+      onChange(mergeFileRefs(emptyJsonValue(schema, emptyToNull), objectValue));
       return;
     }
     try {
@@ -171,7 +180,7 @@ export default function SchemaBodyEditor({
         </div>
         {onFillSample ? (
           <button type="button" className="btn" onClick={fillSample}>
-            Fill sample nested data
+            Fill sample values
           </button>
         ) : null}
         {extraActions}
@@ -186,7 +195,7 @@ export default function SchemaBodyEditor({
             value={xmlText}
             onChange={(event) => editXml(event.target.value)}
             spellCheck={false}
-            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : undefined}
+            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : bodyJsonPlaceholder(schema)}
             aria-invalid={Boolean(xmlError)}
             aria-label={jsonAria}
           />
@@ -199,7 +208,7 @@ export default function SchemaBodyEditor({
             value={jsonText}
             onChange={(event) => editJson(event.target.value)}
             spellCheck={false}
-            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : undefined}
+            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : "Paste JSON here."}
             aria-invalid={Boolean(jsonError)}
             aria-label={jsonAria}
           />
@@ -243,11 +252,34 @@ function asObject(value, schema, xml, emptyToNull) {
   return {};
 }
 
-function pretty(value, emptyToNull) {
+function initialEditorMode(xml, defaultTab, preferForm) {
+  if (xml) {
+    return "xml";
+  }
+  if (defaultTab === "json") {
+    return "json";
+  }
+  if (defaultTab === "form") {
+    return "form";
+  }
+  return preferForm ? "form" : "json";
+}
+
+function formatJsonText(value, emptyToNull) {
   if (emptyToNull && isBlankJson(value)) {
     return "";
   }
   return JSON.stringify(value ?? {}, null, 2);
+}
+
+function emptyJsonValue(schema, emptyToNull) {
+  if (emptyToNull) {
+    return null;
+  }
+  if (schemaHasFormFields(schema)) {
+    return templateFromSchema(schema);
+  }
+  return {};
 }
 
 function isBlankJson(value) {
