@@ -244,14 +244,17 @@ export default function LoadSpecPage() {
     <div className="hero">
       <div className="hero-head">
         <h1>Test Data Studio</h1>
-        {signedIn ? (
+        <div className="hero-head-actions">
+          <Link to="/guide" className="workspace-nav-link">Guide</Link>
+          {signedIn ? (
           <AccountMenu
             account={backend.session?.account}
             canManage={showAdmin}
             canManageSubscriptions={showSubscriptions}
             onSignOut={signOut}
           />
-        ) : null}
+          ) : null}
+        </div>
       </div>
       <p>
         Open an API spec or add REST APIs without Swagger, build test cases, import a collection,

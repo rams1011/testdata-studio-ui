@@ -721,14 +721,6 @@ export default function OperationPage() {
         </div>
 
         <div>
-          <LastRunsStrip
-            specId={specId}
-            planId={planId}
-            caseId={boundCaseId || undefined}
-            environmentId={runEnvironment?.id}
-            environmentReady={environmentReady}
-            refreshKey={historyKey}
-          />
           <RunResultPanel result={runResult} />
           <div className="card saved-case-list" style={{ marginTop: 16 }}>
             <h3>{runEnvironment?.name ? `Saved in ${runEnvironment.name}` : "Saved for this operation"}</h3>
@@ -758,6 +750,14 @@ export default function OperationPage() {
               </div>
             ))}
           </div>
+          <LastRunsStrip
+            specId={specId}
+            planId={planId}
+            caseId={boundCaseId || undefined}
+            environmentId={runEnvironment?.id}
+            environmentReady={environmentReady}
+            refreshKey={historyKey}
+          />
         </div>
       </div>
     </div>

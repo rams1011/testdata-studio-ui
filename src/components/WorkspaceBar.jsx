@@ -516,8 +516,14 @@ export default function WorkspaceBar({
         />
       </div>
       <NavLink
+        to="/guide"
+        className={({ isActive }) => `workspace-nav-link${isActive ? " active" : ""}`}
+      >
+        Guide
+      </NavLink>
+      <NavLink
         to={`/s/${specId}/cases`}
-        className={({ isActive }) => `workspace-cases${isActive ? " active" : ""}`}
+        className={({ isActive }) => `workspace-nav-link workspace-cases${isActive ? " active" : ""}`}
       >
         Cases
         {caseCount ? <span className="workspace-cases-count">{caseCount}</span> : null}

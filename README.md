@@ -25,6 +25,8 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173). The home page checks `GET /api/testdata/config` and lists specs from `GET /api/specs`.
 
+In the app, open **Guide** from the home page header or the studio workspace bar (`/guide`) for the full user guide.
+
 Hosting is one API setting: `TESTDATA_EDITION=local|datacenter|saas` (blank is `datacenter`). `datacenter` requires sign in and shows **Admin**, but hides **Plan**. Accounts are created by an administrator.
 
 | UI action | API |

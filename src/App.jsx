@@ -9,6 +9,7 @@ import OperationPage from "./pages/OperationPage";
 import CasesPage from "./pages/CasesPage";
 import ExportPage from "./pages/ExportPage";
 import HistoryPage from "./pages/HistoryPage";
+import GuidePage from "./pages/GuidePage";
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -16,6 +17,7 @@ const router = createBrowserRouter([
     element: <RequireAuth />,
     children: [
       { path: "/", element: <LoadSpecPage /> },
+      { path: "/guide", element: <GuidePage /> },
       { path: "/admin", element: <AdminPage /> },
       { path: "/subscriptions", element: <SubscriptionsPage /> },
       {
