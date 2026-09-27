@@ -85,7 +85,7 @@ export default function AddApiModal({ onClose, onSave }) {
           <button type="button" className="btn" disabled={saving} onClick={onClose}>Cancel</button>
         </div>
         <p className="hint" style={{ marginTop: 0 }}>
-          Method and path are enough to start a test case. Expand optional schema hints if you need them.
+          Method and path are enough to start a test case. List query parameter names so they appear on the case form.
         </p>
         <div className="quick-add-api-row">
           <div className="field quick-add-api-method">
@@ -126,6 +126,16 @@ export default function AddApiModal({ onClose, onSave }) {
             placeholder="Optional, e.g. Get user"
           />
         </div>
+        <div className="field">
+          <label htmlFor="add-api-query">Query parameters</label>
+          <input
+            id="add-api-query"
+            value={queryNames}
+            onChange={(event) => setQueryNames(event.target.value)}
+            placeholder="Optional, e.g. page, size, filter"
+          />
+          <div className="hint">Comma- or space-separated names. Values are filled in on the test case.</div>
+        </div>
         <details className="add-api-advanced">
           <summary>Optional schema hints</summary>
           <div className="field">
@@ -135,15 +145,6 @@ export default function AddApiModal({ onClose, onSave }) {
               value={tag}
               onChange={(event) => setTag(event.target.value)}
               placeholder="General"
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="add-api-query">Query parameters</label>
-            <input
-              id="add-api-query"
-              value={queryNames}
-              onChange={(event) => setQueryNames(event.target.value)}
-              placeholder="page, size"
             />
           </div>
           <div className="field">

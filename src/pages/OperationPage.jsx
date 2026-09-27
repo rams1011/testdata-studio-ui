@@ -17,13 +17,22 @@ import {
   caseSaveIssues,
   draftRunIssues,
   missingRequiredParamKeys,
-  paramAnchorId
+  paramAnchorId,
+  jumpToValidationItem
 } from "../caseValidation";
 import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
 import StatusCodeField from "../components/StatusCodeField";
 import { useToast } from "../components/Toast";
-import { collectPlanExtracts, hasResponseBodySchema, normalizeRequestBodyTemplate, templateFromSchema, typeWatermark } from "../schema";
+import {
+  allowsManualRequestBody,
+  collectPlanExtracts,
+  manualRequestBodySchema,
+  manualResponseBodySchema,
+  normalizeRequestBodyTemplate,
+  templateFromSchema,
+  typeWatermark
+} from "../schema";
 import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { applyCurlImport } from "../curlImport";
@@ -59,6 +68,7 @@ export default function OperationPage() {
   const [environments, setEnvironments] = useState([]);
   const [duplicateModal, setDuplicateModal] = useState(null);
   const [duplicateSaving, setDuplicateSaving] = useState(false);
+  const [paramSubTab, setParamSubTab] = useState("path");
   const baseline = useRef("");
   const skipUnsavedPrompt = useRef(false);
   const curlImportRef = useRef(location.state?.curlImport);
@@ -69,6 +79,10 @@ export default function OperationPage() {
     setBoundCaseId(caseId);
     skipUnsavedPrompt.current = false;
   }, [caseId]);
+
+  useEffect(() => {
+    setParamSubTab("path");
+  }, [operationKey]);
 
   useEffect(() => {
     if (!planId) return;
@@ -93,11 +107,12 @@ export default function OperationPage() {
       let nextForm = existing ? formFromCase(existing) : blank.form;
       nextForm.contentType = matchedContentType(nextForm.contentType, nextOperation.requestContentTypes)
         || nextForm.contentType;
+      const bodySchema = manualRequestBodySchema(nextOperation, spec?.manual);
       let nextBody = normalizeRequestBodyTemplate(
         existing
-          ? decodeRequestBody(existing.requestBody, nextOperation.requestBody?.jsonSchema, nextForm.contentType)
+          ? decodeRequestBody(existing.requestBody, bodySchema, nextForm.contentType)
           : blank.requestBody,
-        nextOperation.requestBody?.jsonSchema
+        bodySchema
       );
       if (curlImport) {
         const applied = applyCurlImport({
@@ -191,7 +206,6 @@ export default function OperationPage() {
 
   const visibleParamGroups = useMemo(() => ({
     path: withImportedParams(paramGroups.path, form?.pathParams, "path"),
-    query: withImportedParams(paramGroups.query, form?.queryParams, "query"),
     cookie: withImportedParams(paramGroups.cookie, form?.cookieParams, "cookie")
   }), [paramGroups, form]);
 
@@ -337,7 +351,7 @@ export default function OperationPage() {
       contentType: form.contentType || "NA",
       statusCode: Number(form.statusCode),
       maxResponseTimeMs: Number(form.maxResponseTimeMs),
-      requestBody: operation.requestBody ? requestBody : null,
+      requestBody: allowsManualRequestBody(operation, spec?.manual) ? requestBody : null,
       environmentId: runEnvironment?.id
     };
   }
@@ -490,6 +504,18 @@ export default function OperationPage() {
     () => (form && operation ? caseSaveIssues(form, operation, requestBody) : []),
     [form, operation, requestBody]
   );
+  function jumpToField(item) {
+    const anchorId = item?.anchorId || "";
+    if (anchorId.includes("op-param-path-")) {
+      setParamSubTab("path");
+    } else if (anchorId.includes("op-param-query-")) {
+      setParamSubTab("query");
+    } else if (anchorId.includes("op-param-header-")) {
+      setParamSubTab("headers");
+    }
+    window.requestAnimationFrame(() => jumpToValidationItem(item));
+  }
+
   const missingParamKeys = useMemo(
     () => (form && operation ? missingRequiredParamKeys(form, operation) : new Set()),
     [form, operation]
@@ -563,9 +589,9 @@ export default function OperationPage() {
             </button>
           </div>
           {saveIssueGroups.length ? (
-            <ValidationSummary groups={saveIssueGroups} className="try-request-hint" />
+            <ValidationSummary groups={saveIssueGroups} className="try-request-hint" onJump={jumpToField} />
           ) : tryRequestIssues.length ? (
-            <ValidationSummary groups={tryRequestIssues} className="try-request-hint" />
+            <ValidationSummary groups={tryRequestIssues} className="try-request-hint" onJump={jumpToField} />
           ) : null}
         </div>
       </div>
@@ -661,25 +687,88 @@ export default function OperationPage() {
                 ? "Choose an extracted field from an earlier case, or type a literal value."
                 : "No extracted fields in this plan yet. On another case, pick fields under Extract for later cases."}
             </p>
-            <ParamGroup
-              label="Path"
-              parameters={visibleParamGroups.path}
-              values={form.pathParams}
-              missingKeys={missingParamKeys}
-              onChange={(pathParams) => setForm({ ...form, pathParams })}
-            />
-            <ParamGroup
-              label="Query"
-              parameters={visibleParamGroups.query}
-              values={form.queryParams}
-              missingKeys={missingParamKeys}
-              onChange={(queryParams) => setForm({ ...form, queryParams })}
-            />
-            <HeaderParamGroup
-              specParameters={paramGroups.header}
-              values={form.headers}
-              onChange={(headers) => setForm({ ...form, headers })}
-            />
+            <div
+              className="body-editor-tabs param-subtabs"
+              role="tablist"
+              aria-label="Path, query, and headers"
+            >
+              <button
+                type="button"
+                role="tab"
+                id="op-param-tab-path"
+                aria-selected={paramSubTab === "path"}
+                aria-controls="op-param-panel-path"
+                className={paramSubTab === "path" ? "active" : ""}
+                onClick={() => setParamSubTab("path")}
+              >
+                Path
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="op-param-tab-query"
+                aria-selected={paramSubTab === "query"}
+                aria-controls="op-param-panel-query"
+                className={paramSubTab === "query" ? "active" : ""}
+                onClick={() => setParamSubTab("query")}
+              >
+                Query
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="op-param-tab-headers"
+                aria-selected={paramSubTab === "headers"}
+                aria-controls="op-param-panel-headers"
+                className={paramSubTab === "headers" ? "active" : ""}
+                onClick={() => setParamSubTab("headers")}
+              >
+                Headers
+              </button>
+            </div>
+            <div
+              id="op-param-panel-path"
+              role="tabpanel"
+              aria-labelledby="op-param-tab-path"
+              className="param-subtab-panel"
+              hidden={paramSubTab !== "path"}
+            >
+              <ParamGroup
+                label="Path"
+                embedded
+                parameters={visibleParamGroups.path}
+                values={form.pathParams}
+                missingKeys={missingParamKeys}
+                onChange={(pathParams) => setForm({ ...form, pathParams })}
+              />
+            </div>
+            <div
+              id="op-param-panel-query"
+              role="tabpanel"
+              aria-labelledby="op-param-tab-query"
+              className="param-subtab-panel"
+              hidden={paramSubTab !== "query"}
+            >
+              <QueryParamGroup
+                specParameters={paramGroups.query}
+                values={form.queryParams}
+                missingKeys={missingParamKeys}
+                onChange={(queryParams) => setForm({ ...form, queryParams })}
+              />
+            </div>
+            <div
+              id="op-param-panel-headers"
+              role="tabpanel"
+              aria-labelledby="op-param-tab-headers"
+              className="param-subtab-panel"
+              hidden={paramSubTab !== "headers"}
+            >
+              <HeaderParamGroup
+                specParameters={paramGroups.header}
+                values={form.headers}
+                onChange={(headers) => setForm({ ...form, headers })}
+              />
+            </div>
             <ParamGroup
               label="Cookies"
               parameters={visibleParamGroups.cookie}
@@ -695,14 +784,14 @@ export default function OperationPage() {
             id="op-section-request-body"
           >
             <h3>Request body{operation.requestBody?.required ? <span className="req"> *</span> : null}</h3>
-            {operation.requestBody ? (
+            {allowsManualRequestBody(operation, spec?.manual) ? (
               <RequestBodyEditor
                 key={`${operationKey}-${caseId || "new"}`}
                 resetKey={`${operationKey}-${caseId || "new"}`}
                 caseId={boundCaseId}
                 onEnsureCase={ensureCase}
                 onFileCommitted={commitRequestBody}
-                schema={operation.requestBody.jsonSchema}
+                schema={manualRequestBodySchema(operation, spec?.manual)}
                 value={requestBody}
                 onChange={setRequestBody}
                 contentType={form.contentType}
@@ -718,7 +807,7 @@ export default function OperationPage() {
             <ExpectedResponseEditor
               key={`${operationKey}-${caseId || "new"}-expected`}
               resetKey={`${operationKey}-${caseId || "new"}`}
-              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
+              schema={manualResponseBodySchema(operation, spec?.manual)}
               value={form.expectedResponse}
               onChange={(expectedResponse) => setForm((current) => ({ ...current, expectedResponse }))}
               contentType={operation.response?.contentType || form.contentType}
@@ -733,7 +822,7 @@ export default function OperationPage() {
 
           <Collapsible title="JSONPath assertions" hint="Off until you pick paths">
             <JsonPathAssertionsPicker
-              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
+              schema={manualResponseBodySchema(operation, spec?.manual)}
               expectedResponse={form.expectedResponse}
               value={form.jsonPathAssertions}
               onChange={(jsonPathAssertions) => setForm((current) => ({ ...current, jsonPathAssertions }))}
@@ -746,7 +835,7 @@ export default function OperationPage() {
             defaultOpen
           >
             <ExtractsPicker
-              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
+              schema={manualResponseBodySchema(operation, spec?.manual)}
               expectedResponse={form.expectedResponse}
               runResult={runResult}
               value={form.extracts}
@@ -892,9 +981,10 @@ function caseUpdateFromView(item, patch, environmentId) {
 function blankOperationCase(operation, spec) {
   const form = formFromOperation(operation, spec);
   form.contentType = matchedContentType(form.contentType, operation.requestContentTypes) || form.contentType;
+  const bodySchema = manualRequestBodySchema(operation, spec?.manual);
   const requestBody = decodeRequestBody(
-    templateFromSchema(operation.requestBody?.jsonSchema) ?? {},
-    operation.requestBody?.jsonSchema,
+    templateFromSchema(bodySchema) ?? {},
+    bodySchema,
     form.contentType
   );
   return { form, requestBody };
@@ -997,6 +1087,129 @@ const MANAGED_HEADERS = new Set([
   "content-encoding", "transfer-encoding"
 ]);
 
+function QueryParamGroup({ specParameters, values, onChange, missingKeys = new Set() }) {
+  const specParams = withImportedParams(specParameters, values, "query");
+  const specNames = new Set(specParams.map((item) => item.name));
+  const extras = Object.entries(values || {}).filter(([name]) => name && !specNames.has(name));
+  const [draftName, setDraftName] = useState("");
+  const [draftValue, setDraftValue] = useState("");
+  const [hint, setHint] = useState("");
+
+  function setQuery(name, value) {
+    onChange({ ...(values || {}), [name]: value });
+  }
+
+  function renameExtra(oldName, nextName) {
+    const trimmed = String(nextName || "").trim();
+    if (!trimmed || trimmed === oldName) {
+      return Boolean(trimmed);
+    }
+    const clash = Object.keys(values || {}).some(
+      (key) => key !== oldName && key.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (clash || specNames.has(trimmed)) {
+      setHint(`Query parameter ${trimmed} is already listed.`);
+      return false;
+    }
+    const next = { ...(values || {}) };
+    next[trimmed] = next[oldName] ?? "";
+    delete next[oldName];
+    setHint("");
+    onChange(next);
+    return true;
+  }
+
+  function removeExtra(name) {
+    const next = { ...(values || {}) };
+    delete next[name];
+    onChange(next);
+  }
+
+  function addExtra() {
+    const name = draftName.trim();
+    if (!name) {
+      setHint("Enter a query parameter name.");
+      return;
+    }
+    const existing = Object.keys(values || {}).find((key) => key.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setQuery(existing, draftValue);
+    } else {
+      setQuery(name, draftValue);
+    }
+    setDraftName("");
+    setDraftValue("");
+    setHint("");
+  }
+
+  return (
+    <>
+      <p className="hint" style={{ marginTop: 0 }}>
+        Parameters from the API definition are listed first. Add extra query parameters for this case anytime.
+      </p>
+      {specParams.map((parameter) => (
+        isArrayParam(parameter) ? (
+          <ArrayParamField
+            key={parameter.name}
+            parameter={parameter}
+            values={values}
+            missingKeys={missingKeys}
+            onChange={onChange}
+          />
+        ) : (
+          <div
+            className={`field${missingKeys.has(`${parameter.in}:${parameter.name}`) ? " field-missing" : ""}`}
+            key={parameter.name}
+            id={paramAnchorId(parameter)}
+          >
+            <label>
+              {parameter.name}{parameter.required ? " *" : ""}
+              {parameter.description ? <span className="hint">{parameter.description}</span> : null}
+            </label>
+            <ExtractValueField
+              value={values?.[parameter.name] || ""}
+              placeholder={typeWatermark(parameter.schema)}
+              onChange={(next) => setQuery(parameter.name, next)}
+            />
+          </div>
+        )
+      ))}
+      {extras.map(([name, value]) => (
+        <ExtraHeaderRow
+          key={name}
+          name={name}
+          value={value}
+          onRename={renameExtra}
+          onValueChange={setQuery}
+          onRemove={removeExtra}
+        />
+      ))}
+      <div className="header-add">
+        <input
+          value={draftName}
+          placeholder="Query name, e.g. page"
+          aria-label="New query parameter name"
+          onChange={(event) => setDraftName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addExtra();
+            }
+          }}
+        />
+        <ExtractValueField
+          value={draftValue}
+          placeholder="Value"
+          ariaLabel="New query parameter value"
+          onChange={setDraftValue}
+        />
+        <button type="button" className="btn" onClick={addExtra}>Add query</button>
+      </div>
+      {hint ? <p className="hint">{hint}</p> : null}
+    </>
+  );
+}
+
 function HeaderParamGroup({ specParameters, values, onChange }) {
   const specParams = specParameters || [];
   const specNames = new Set(specParams.map((item) => item.name));
@@ -1062,8 +1275,7 @@ function HeaderParamGroup({ specParameters, values, onChange }) {
 
   return (
     <>
-      <div className="tag-label" style={{ color: "#696969" }}>Headers</div>
-      <p className="hint">
+      <p className="hint" style={{ marginTop: 0 }}>
         Spec headers are listed first. Add extra headers for this case even if they are not in the spec.
         Authorization is set on the environment.
       </p>
@@ -1076,7 +1288,7 @@ function HeaderParamGroup({ specParameters, values, onChange }) {
             onChange={onChange}
           />
         ) : (
-          <div className="field" key={parameter.name}>
+          <div className="field" key={parameter.name} id={paramAnchorId(parameter)}>
             <label>
               {parameter.name}{parameter.required ? " *" : ""}
               {parameter.description ? <span className="hint">{parameter.description}</span> : null}
@@ -1165,11 +1377,22 @@ function ExtraHeaderRow({ name, value, onRename, onValueChange, onRemove }) {
   );
 }
 
-function ParamGroup({ label, parameters, values, onChange, missingKeys = new Set() }) {
-  if (!parameters.length) return null;
+function ParamGroup({ label, parameters, values, onChange, missingKeys = new Set(), embedded = false }) {
+  if (!parameters.length) {
+    if (embedded) {
+      return (
+        <p className="hint" style={{ marginTop: 0 }}>
+          No {label.toLowerCase()} parameters for this API.
+        </p>
+      );
+    }
+    return null;
+  }
   return (
     <>
-      <div className="tag-label" style={{ color: "#696969" }}>{label}</div>
+      {embedded ? null : (
+        <div className="tag-label" style={{ color: "#696969" }}>{label}</div>
+      )}
       {parameters.map((parameter) => (
         isArrayParam(parameter) ? (
           <ArrayParamField

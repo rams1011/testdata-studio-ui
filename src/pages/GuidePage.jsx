@@ -108,7 +108,7 @@ export default function GuidePage() {
               Case counts show how many saved cases exist per operation in the current plan and environment.
             </p>
             <p>
-              Click an operation to open the case editor. Manual specs have a <strong>quick add</strong> bar in the sidebar (method, path, +) and <strong>Add API</strong> in the workspace bar for optional schema hints.
+              Click an operation to open the case editor. Manual specs have a <strong>quick add</strong> bar in the sidebar (method, path, optional query names, +) and <strong>Add API</strong> for labels, query parameters, and other schema hints.
             </p>
           </section>
 
@@ -117,7 +117,7 @@ export default function GuidePage() {
             <p>Each case stores metadata and request/response expectations for one operation.</p>
             <ul>
               <li><strong>Test name</strong>, group, enabled flag, base URL, expected HTTP status, response type, max response time.</li>
-              <li><strong>Parameters</strong> — path, query, headers, cookies from the OpenAPI schema. Required fields are marked with *.</li>
+              <li><strong>Parameters</strong> — <strong>Path</strong>, <strong>Query</strong>, and <strong>Headers</strong> tabs; cookies below. Use <strong>Add query</strong> / <strong>Add header</strong> for extras. Required fields are marked with *.</li>
               <li><strong>Run authentication</strong> — credentials for Try / Run (session-only; not stored on the environment record).</li>
             </ul>
             <p>
