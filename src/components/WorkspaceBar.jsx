@@ -6,7 +6,8 @@ import AccountMenu from "./AccountMenu";
 import AddSpecModal from "./AddSpecModal";
 import SpecMoreMenu from "./SpecMoreMenu";
 import SpecSwitcherModal from "./SpecSwitcherModal";
-import LayersIcon from "./LayersIcon";
+import SearchIcon from "./SearchIcon";
+import GuideLink from "./GuideLink";
 import { touchRecentSpec } from "../specCatalog";
 
 const SWITCH_SPEC_TIP = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform)
@@ -55,7 +56,7 @@ export default function WorkspaceBar({
   const [environmentId, setEnvironmentId] = useState("");
   const [envModal, setEnvModal] = useState(null);
   const [envEditingId, setEnvEditingId] = useState("");
-  const [envForm, setEnvForm] = useState({ name: "local", baseUrl: "", authType: "NONE" });
+  const [envForm, setEnvForm] = useState({ name: "Default", baseUrl: "", authType: "NONE" });
   const [savingEnv, setSavingEnv] = useState(false);
   const [specSettingsOpen, setSpecSettingsOpen] = useState(false);
   const [specForm, setSpecForm] = useState(() => specSettingsForm(spec));
@@ -468,11 +469,12 @@ export default function WorkspaceBar({
   }
 
   const specTitle = spec.name || spec.title || specId;
+  const catalogControlLabel = spec.manual ? "Catalog" : "Spec";
 
   return (
     <header className="workspace-bar">
       <div className="workspace-control workspace-control-spec">
-        <span className="workspace-control-label">Spec</span>
+        <span className="workspace-control-label">{catalogControlLabel}</span>
         <div className="workspace-spec-current">
           <span className="workspace-spec-name" title={specTitle}>
             {specTitle}
@@ -484,7 +486,7 @@ export default function WorkspaceBar({
             title={SWITCH_SPEC_TIP}
             aria-label={SWITCH_SPEC_TIP}
           >
-            <LayersIcon size={16} />
+            <SearchIcon size={16} />
           </button>
         </div>
       </div>
@@ -516,12 +518,6 @@ export default function WorkspaceBar({
         />
       </div>
       <NavLink
-        to="/guide"
-        className={({ isActive }) => `workspace-nav-link${isActive ? " active" : ""}`}
-      >
-        Guide
-      </NavLink>
-      <NavLink
         to={`/s/${specId}/cases`}
         className={({ isActive }) => `workspace-nav-link workspace-cases${isActive ? " active" : ""}`}
       >
@@ -545,12 +541,15 @@ export default function WorkspaceBar({
           if (file) reloadSpec(file);
         }}
       />
-      <AccountMenu
-        account={account}
-        canManage={canManage}
-        canManageSubscriptions={canManageSubscriptions}
-        onSignOut={onSignOut}
-      />
+      <div className="workspace-bar-trailing">
+        <GuideLink />
+        <AccountMenu
+          account={account}
+          canManage={canManage}
+          canManageSubscriptions={canManageSubscriptions}
+          onSignOut={onSignOut}
+        />
+      </div>
       {planModal ? (
         <PlanModal
           mode={planModal}
@@ -624,7 +623,7 @@ function envFormFrom(list, selectedId, spec) {
     };
   }
   return {
-    name: "local",
+    name: "Default",
     baseUrl: spec?.baseUrl || "",
     authType: "NONE"
   };

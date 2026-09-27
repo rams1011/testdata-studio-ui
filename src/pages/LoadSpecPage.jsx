@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import GuideLink from "../components/GuideLink";
+import { IconButton, RefreshIcon, SpinnerIcon, TrashIcon } from "../components/RunIconButton";
 import { API_DISPLAY, Api } from "../api";
 import { canManageMembers, clearSession, isAuthEnabled, isBillingEnabled, isWorkspaceReady, saveSession, subscriptionBanner } from "../session";
 import AccountMenu from "../components/AccountMenu";
 import AddSpecModal from "../components/AddSpecModal";
+import StartWithoutOpenApiModal from "../components/StartWithoutOpenApiModal";
 import { useToast } from "../components/Toast";
 import { groupSpecs, touchRecentSpec } from "../specCatalog";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
@@ -15,6 +18,7 @@ export default function LoadSpecPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [addSpecSource, setAddSpecSource] = useState(null);
+  const [startWithoutOpenApiOpen, setStartWithoutOpenApiOpen] = useState(false);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
@@ -101,6 +105,12 @@ export default function LoadSpecPage() {
     } else {
       navigate(`/s/${spec.specId}/cases`);
     }
+  }
+
+  function onRestCatalogStarted(spec, operation) {
+    touchRecentSpec(spec.specId);
+    refreshSpecs();
+    navigate(`/s/${spec.specId}/op/${encodeURIComponent(operation.key)}`);
   }
 
   async function importCollection(file) {
@@ -245,7 +255,7 @@ export default function LoadSpecPage() {
       <div className="hero-head">
         <h1>Test Data Studio</h1>
         <div className="hero-head-actions">
-          <Link to="/guide" className="workspace-nav-link">Guide</Link>
+          <GuideLink />
           {signedIn ? (
           <AccountMenu
             account={backend.session?.account}
@@ -339,9 +349,9 @@ export default function LoadSpecPage() {
               type="button"
               className="btn"
               disabled={workspacePending || apiDown || backend.status === "checking"}
-              onClick={() => setAddSpecSource("rest")}
+              onClick={() => setStartWithoutOpenApiOpen(true)}
             >
-              Add REST APIs
+              Start without OpenAPI
             </button>
             <button
               type="button"
@@ -359,7 +369,7 @@ export default function LoadSpecPage() {
               "Looking for saved specs…"
             ) : (
               <>
-                Nothing loaded yet. Use Add spec for OpenAPI, or Add REST APIs if you do not have Swagger.
+                Nothing loaded yet. Use Start without OpenAPI, paste curl in Studio, or Add spec for OpenAPI.
               </>
             )}
           </div>
@@ -396,24 +406,27 @@ export default function LoadSpecPage() {
                           {spec.baseUrl ? ` · ${spec.baseUrl}` : ""}
                         </div>
                       </button>
-                      {spec.manual ? null : (
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={workspacePending || !!reloadingId || !!deletingId}
-                        onClick={(event) => startReload(spec, event)}
-                      >
-                        {reloadingId === spec.specId ? "Updating…" : "Update spec"}
-                      </button>
-                      )}
-                      <button
-                        type="button"
-                        className="btn danger"
-                        disabled={workspacePending || !!reloadingId || !!deletingId}
-                        onClick={(event) => deleteSpec(spec, event)}
-                      >
-                        {deletingId === spec.specId ? "Deleting…" : "Delete"}
-                      </button>
+                      <div className="spec-row-actions">
+                        {spec.manual ? null : (
+                          <IconButton
+                            label={`Update spec ${spec.name || spec.title} from OpenAPI file`}
+                            title={reloadingId === spec.specId ? "Updating…" : "Update spec"}
+                            disabled={workspacePending || !!reloadingId || !!deletingId}
+                            onClick={(event) => startReload(spec, event)}
+                          >
+                            {reloadingId === spec.specId ? <SpinnerIcon /> : <RefreshIcon />}
+                          </IconButton>
+                        )}
+                        <IconButton
+                          label={`Delete spec ${spec.name || spec.title}`}
+                          title={deletingId === spec.specId ? "Deleting…" : "Delete spec"}
+                          disabled={workspacePending || !!reloadingId || !!deletingId}
+                          danger
+                          onClick={(event) => deleteSpec(spec, event)}
+                        >
+                          {deletingId === spec.specId ? <SpinnerIcon /> : <TrashIcon />}
+                        </IconButton>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -515,6 +528,15 @@ export default function LoadSpecPage() {
         </div>
       ) : null}
 
+      {startWithoutOpenApiOpen && !saasLocked ? (
+        <StartWithoutOpenApiModal
+          open={startWithoutOpenApiOpen}
+          apiDown={apiDown}
+          onClose={() => setStartWithoutOpenApiOpen(false)}
+          onCreated={onRestCatalogStarted}
+          onCreateEmptyCatalog={() => setAddSpecSource("rest")}
+        />
+      ) : null}
       {addSpecSource && !saasLocked ? (
         <AddSpecModal
           open={!!addSpecSource}

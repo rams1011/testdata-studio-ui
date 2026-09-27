@@ -35,7 +35,7 @@ export default function RequestBodyEditor({
         onEnsureCase={onEnsureCase}
         onFileCommitted={onFileCommitted}
         format={xml ? "xml" : "json"}
-        defaultTab={structured ? "json" : "auto"}
+        defaultTab="json"
         searchAria="Search request body fields"
         jsonAria={xml ? "Request body XML" : "Request body JSON"}
         tabsAria="Request body editor"
