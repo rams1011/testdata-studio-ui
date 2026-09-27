@@ -6,6 +6,7 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 export default function SidebarQuickAdd({ disabled = false, onAdd }) {
   const [method, setMethod] = useState("GET");
   const [path, setPath] = useState("");
+  const [queryNames, setQueryNames] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -18,8 +19,9 @@ export default function SidebarQuickAdd({ disabled = false, onAdd }) {
     setBusy(true);
     setError("");
     try {
-      await onAdd(buildManualOperationPayload({ method, path }));
+      await onAdd(buildManualOperationPayload({ method, path, queryNames }));
       setPath("");
+      setQueryNames("");
     } catch (err) {
       setError(err.message || "Could not add API");
     } finally {
@@ -69,6 +71,21 @@ export default function SidebarQuickAdd({ disabled = false, onAdd }) {
           {busy ? "…" : "+"}
         </button>
       </div>
+      <input
+        type="text"
+        className="sidebar-quick-add-query"
+        value={queryNames}
+        disabled={disabled || busy}
+        placeholder="Query params (optional): page, size"
+        aria-label="Query parameter names"
+        onChange={(event) => setQueryNames(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            submit();
+          }
+        }}
+      />
       {error ? <div className="sidebar-quick-add-error">{error}</div> : null}
       {pathParams.length && !error ? (
         <div className="hint sidebar-quick-add-hint">Path params: {pathParams.join(", ")}</div>

@@ -1092,6 +1092,25 @@ a { color: inherit; text-decoration: none; }
     background: var(--navy-2);
     color: #fff;
 }
+.param-subtabs {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    vertical-align: top;
+}
+.param-subtabs button {
+    flex: 0 0 auto;
+}
+.param-subtabs button.active {
+    position: relative;
+    z-index: 1;
+}
+.param-subtab-panel {
+    margin-top: 12px;
+}
+.param-subtab-panel[hidden] {
+    display: none;
+}
 .body-json {
     width: 100%;
     min-height: 280px;
@@ -2132,8 +2151,21 @@ a { color: inherit; text-decoration: none; }
     font-family: var(--button);
     font-weight: 650;
 }
-.sidebar-quick-add .quick-add-api-path-input::placeholder {
+.sidebar-quick-add .quick-add-api-path-input::placeholder,
+.sidebar-quick-add-query::placeholder {
     color: #888;
+}
+.sidebar-quick-add-query {
+    width: 100%;
+    margin-top: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.2);
+    color: #fff;
+    border-radius: var(--radius);
+    padding: 6px 8px;
+    font-size: 11px;
+    font-family: var(--mono);
+    box-sizing: border-box;
 }
 .sidebar-quick-add .quick-add-api-submit {
     min-width: 32px;

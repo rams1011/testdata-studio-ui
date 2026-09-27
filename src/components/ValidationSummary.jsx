@@ -1,6 +1,6 @@
 import { issueCount, jumpToValidationItem } from "../caseValidation";
 
-export default function ValidationSummary({ groups, className = "" }) {
+export default function ValidationSummary({ groups, className = "", onJump = jumpToValidationItem }) {
   const count = issueCount(groups);
   if (!count) {
     return null;
@@ -21,7 +21,7 @@ export default function ValidationSummary({ groups, className = "" }) {
                   key={item.key}
                   type="button"
                   className="validation-chip"
-                  onClick={() => jumpToValidationItem(item)}
+                  onClick={() => onJump(item)}
                   title={`Go to ${item.label}`}
                 >
                   {item.label}

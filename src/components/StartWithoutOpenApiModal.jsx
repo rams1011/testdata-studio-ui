@@ -14,6 +14,7 @@ export default function StartWithoutOpenApiModal({ open, apiDown, onClose, onCre
   const [method, setMethod] = useState("GET");
   const [path, setPath] = useState("/");
   const [summary, setSummary] = useState("");
+  const [queryNames, setQueryNames] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -26,6 +27,7 @@ export default function StartWithoutOpenApiModal({ open, apiDown, onClose, onCre
     setMethod("GET");
     setPath("/");
     setSummary("");
+    setQueryNames("");
     setLoading(false);
     setError("");
     catalogRef.current?.focus();
@@ -71,7 +73,7 @@ export default function StartWithoutOpenApiModal({ open, apiDown, onClose, onCre
         baseUrl: baseUrl.trim() || null,
         manual: true
       });
-      const operationPayload = buildManualOperationPayload({ method, path, summary });
+      const operationPayload = buildManualOperationPayload({ method, path, summary, queryNames });
       const created = await Api.addOperation(spec.specId, operationPayload);
       onCreated?.(spec, created);
       onClose();
@@ -169,6 +171,17 @@ export default function StartWithoutOpenApiModal({ open, apiDown, onClose, onCre
             onChange={(event) => setSummary(event.target.value)}
             placeholder="Optional, e.g. Get user"
           />
+        </div>
+        <div className="field">
+          <label htmlFor="start-rest-query">Query parameters</label>
+          <input
+            id="start-rest-query"
+            value={queryNames}
+            disabled={loading}
+            onChange={(event) => setQueryNames(event.target.value)}
+            placeholder="Optional, e.g. page, size"
+          />
+          <div className="hint">Comma- or space-separated names.</div>
         </div>
         {error ? <div className="status-banner down" style={{ marginTop: 12 }}>{error}</div> : null}
         <div className="actions" style={{ marginTop: 16, justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>

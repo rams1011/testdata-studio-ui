@@ -142,14 +142,15 @@ export default function SchemaBodyEditor({
   return (
     <div className="body-editor">
       <div className="body-editor-toolbar">
-        <input
-          type="search"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder="Search fields"
-          aria-label={searchAria}
-          disabled={mode !== "form"}
-        />
+        {mode === "form" ? (
+          <input
+            type="search"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Search fields"
+            aria-label={searchAria}
+          />
+        ) : null}
         <div className="body-editor-tabs" role="tablist" aria-label={tabsAria}>
           <button
             type="button"

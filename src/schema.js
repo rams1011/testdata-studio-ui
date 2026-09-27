@@ -1,3 +1,23 @@
+export const MANUAL_BODY_SCHEMA = Object.freeze({ type: "object", additionalProperties: true });
+
+export function allowsManualRequestBody(operation, manual) {
+  return Boolean(operation?.requestBody || manual);
+}
+
+export function manualRequestBodySchema(operation, manual) {
+  if (operation?.requestBody?.jsonSchema) {
+    return operation.requestBody.jsonSchema;
+  }
+  return manual ? MANUAL_BODY_SCHEMA : null;
+}
+
+export function manualResponseBodySchema(operation, manual) {
+  if (hasResponseBodySchema(operation?.response)) {
+    return operation.response.jsonSchema;
+  }
+  return manual ? MANUAL_BODY_SCHEMA : null;
+}
+
 export function hasResponseSchema(schema) {
   if (schema == null || typeof schema !== "object" || Array.isArray(schema)) {
     return false;
