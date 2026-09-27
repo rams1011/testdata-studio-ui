@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import LabelField, { specLabel } from "./LabelField";
+import { IconButton, RefreshIcon, SpinnerIcon } from "./RunIconButton";
 
 export default function SpecSettingsModal({
   spec,
@@ -103,9 +104,14 @@ export default function SpecSettingsModal({
         </div>
         <div className="actions" style={{ marginTop: 16, justifyContent: "flex-end", gap: 8 }}>
           {onUpdateSpec ? (
-            <button type="button" className="btn" onClick={onUpdateSpec} disabled={saving || reloading}>
-              {reloading ? "Updating…" : "Update spec"}
-            </button>
+            <IconButton
+              label="Update spec from OpenAPI file"
+              title={reloading ? "Updating…" : "Update spec"}
+              onClick={onUpdateSpec}
+              disabled={saving || reloading}
+            >
+              {reloading ? <SpinnerIcon /> : <RefreshIcon />}
+            </IconButton>
           ) : null}
           <button type="button" className="btn primary" onClick={onSave} disabled={saving || reloading}>
             {saving ? "Saving…" : "Save spec"}

@@ -27,7 +27,6 @@ export default function GuidePage() {
           <span className="guide-head-sep">·</span>
           User guide
         </h1>
-        <Link to="/" className="btn">Back to specs</Link>
       </div>
 
       <div className="guide-layout">
@@ -60,7 +59,8 @@ export default function GuidePage() {
             <h2>Home and specs</h2>
             <p>From the home page you can:</p>
             <ul>
-              <li><strong>Add spec</strong> — paste a URL, upload OpenAPI (JSON/YAML), paste document text, or create a manual REST catalog without Swagger.</li>
+              <li><strong>Start without OpenAPI</strong> — catalog name plus first method/path; opens the case editor immediately.</li>
+              <li><strong>Add spec</strong> — paste a URL, upload OpenAPI (JSON/YAML), or paste document text.</li>
               <li><strong>Open</strong> a saved spec to enter the studio.</li>
               <li><strong>Reload</strong> a spec from its source URL or file when the API definition changed.</li>
               <li><strong>Import collection</strong> — bring in a previously exported studio JSON collection.</li>
@@ -74,14 +74,15 @@ export default function GuidePage() {
             <h2>Workspace bar</h2>
             <p>The top bar controls what you are editing and where requests are sent.</p>
             <dl className="guide-dl">
-              <dt>Spec</dt>
+              <dt>Spec / Catalog</dt>
               <dd>
-                Current API catalog. Use the layers icon or <kbd>Ctrl</kbd>+<kbd>K</kbd> / <kbd>⌘</kbd>+<kbd>K</kbd> to
+                Current OpenAPI spec or REST catalog (the bar shows <strong>Catalog</strong> for REST-only catalogs).
+                Use the search icon next to the name or <kbd>Ctrl</kbd>+<kbd>K</kbd> / <kbd>⌘</kbd>+<kbd>K</kbd> to
                 switch specs or create a new one without leaving the studio.
               </dd>
               <dt>Environment</dt>
               <dd>
-                Named host (for example local, int, prod) with its own base URL and auth type. Switching environment
+                Named host (for example Default, int, prod) with its own base URL and auth type. Switching environment
                 changes which saved cases you see and applies that host&apos;s URL to the spec when selected.
               </dd>
               <dt>Test plan</dt>
@@ -91,6 +92,10 @@ export default function GuidePage() {
               </dd>
               <dt>Cases</dt>
               <dd>Jump to the plan&apos;s case table — filter, bulk enable/disable, run single cases or the whole plan.</dd>
+              <dt>Guide</dt>
+              <dd>
+                Help icon (<strong>?</strong> in a circle) at the top right, before your account menu, opens this guide in a new browser tab.
+              </dd>
               <dt>More</dt>
               <dd>Spec settings, run <strong>History</strong>, and <strong>Export</strong>.</dd>
             </dl>
@@ -103,8 +108,7 @@ export default function GuidePage() {
               Case counts show how many saved cases exist per operation in the current plan and environment.
             </p>
             <p>
-              Click an operation to open the case editor. Manual specs also support <strong>Add API</strong> in the
-              workspace bar.
+              Click an operation to open the case editor. Manual specs have a <strong>quick add</strong> bar in the sidebar (method, path, +) and <strong>Add API</strong> in the workspace bar for optional schema hints.
             </p>
           </section>
 
@@ -176,7 +180,7 @@ export default function GuidePage() {
             </p>
             <ul>
               <li>Create, rename, duplicate, or delete environments from the Environment menu.</li>
-              <li><strong>Duplicate into …</strong> on a saved case copies it to another environment.</li>
+              <li><strong>Duplicate</strong> on a saved case opens a dialog to name the copy and pick an environment (same env by default).</li>
               <li>Applying an environment updates the spec base URL and may rewrite cases that still used the old host.</li>
             </ul>
           </section>

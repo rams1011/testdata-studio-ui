@@ -28,7 +28,8 @@ export default function SchemaBodyEditor({
   allowExtracts = false,
   fileUploads = false,
   environmentId,
-  defaultTab = "auto"
+  defaultTab = "json",
+  storedJson
 }) {
   const xml = format === "xml";
   const preferForm = schemaHasFormFields(schema);
@@ -47,11 +48,11 @@ export default function SchemaBodyEditor({
   useEffect(() => {
     setMode(initialEditorMode(xml, defaultTab, preferForm));
     setFilter("");
-    setJsonText(formatJsonText(stripFileRefsForEditor(objectValue), emptyToNull));
+    setJsonText(jsonTextFromValue(storedJson, objectValue, emptyToNull));
     setXmlText(xml ? jsonToXml(stripFileRefsForEditor(value ?? objectValue), schema) : "");
     setJsonError("");
     setXmlError("");
-  }, [resetKey, emptyToNull, xml, preferForm, defaultTab]);
+  }, [resetKey, emptyToNull, xml, preferForm, defaultTab, storedJson]);
 
   useEffect(() => {
     if (xml) {
@@ -68,16 +69,19 @@ export default function SchemaBodyEditor({
     if (mode !== "json" || (jsonError && !(emptyToNull && value == null))) {
       return;
     }
-    const next = formatJsonText(stripFileRefsForEditor(objectValue), emptyToNull);
+    if (shouldKeepLocalJsonText(emptyToNull, storedJson, objectValue, jsonText)) {
+      return;
+    }
+    const next = jsonTextFromValue(storedJson, objectValue, emptyToNull);
     setJsonText((current) => (current === next ? current : next));
-  }, [value, objectValue, schema, mode, jsonError, xmlError, emptyToNull, xml]);
+  }, [value, objectValue, schema, mode, jsonError, xmlError, emptyToNull, xml, storedJson, jsonText]);
 
   function showForm() {
     setMode("form");
   }
 
   function showJson() {
-    setJsonText(formatJsonText(stripFileRefsForEditor(objectValue), emptyToNull));
+    setJsonText(jsonTextFromValue(storedJson, objectValue, emptyToNull));
     setJsonError("");
     setMode("json");
   }
@@ -286,11 +290,33 @@ function isBlankJson(value) {
   if (value == null) {
     return true;
   }
+  // Empty object means "no optional body"; [] is a valid expected response.
   if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
     return true;
   }
-  if (Array.isArray(value) && value.length === 0) {
+  return false;
+}
+
+function jsonTextFromValue(storedJson, objectValue, emptyToNull) {
+  if (emptyToNull && storedJson != null) {
+    return storedJson;
+  }
+  return formatJsonText(stripFileRefsForEditor(objectValue), emptyToNull);
+}
+
+function shouldKeepLocalJsonText(emptyToNull, storedJson, objectValue, jsonText) {
+  if (!emptyToNull || !jsonText.trim()) {
+    return false;
+  }
+  if (storedJson != null && storedJson.trim()) {
+    return false;
+  }
+  if (objectValue != null && !isBlankJson(objectValue)) {
+    return false;
+  }
+  try {
+    return !isBlankJson(JSON.parse(jsonText));
+  } catch {
     return true;
   }
-  return false;
 }

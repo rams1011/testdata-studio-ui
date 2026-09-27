@@ -5,6 +5,7 @@ import { isXmlContentType, jsonToXml, looksLikeXml, xmlToJson } from "../xml";
 export default function ExpectedResponseEditor({ schema, value, onChange, onBuilt, resetKey, contentType }) {
   const xml = isXmlContentType(contentType);
   const canBuild = hasResponseSchema(schema);
+  const storedJson = storedExpectedJson(value, xml);
   const parsed = parseExpected(value, schema, xml);
   const hasContent = hasExpectedResponseContent(value);
 
@@ -42,7 +43,7 @@ export default function ExpectedResponseEditor({ schema, value, onChange, onBuil
       <p className="hint" style={{ margin: "0 0 12px" }}>
         {xml
           ? "Optional XML body to compare. Leave blank if you only check status."
-          : "Optional JSON body to compare. Leave blank if you only check status."}
+          : "Optional JSON body to compare (including [] for an empty array). Leave blank if you only check status."}
       </p>
       <SchemaBodyEditor
         schema={schema || { type: "object" }}
@@ -50,10 +51,12 @@ export default function ExpectedResponseEditor({ schema, value, onChange, onBuil
         onChange={persist}
         resetKey={`${resetKey}:${xml ? "xml" : "json"}`}
         format={xml ? "xml" : "json"}
+        defaultTab="json"
         searchAria="Search expected response fields"
         jsonAria={xml ? "Expected response XML" : "Expected response JSON"}
         tabsAria="Expected response editor"
         emptyToNull
+        storedJson={xml ? undefined : storedJson}
         extraActions={(
           <button type="button" className="btn" onClick={clearExpected} disabled={!hasContent}>
             Clear
@@ -62,6 +65,20 @@ export default function ExpectedResponseEditor({ schema, value, onChange, onBuil
       />
     </div>
   );
+}
+
+function storedExpectedJson(value, xml) {
+  if (value == null) {
+    return "";
+  }
+  const text = String(value).trim();
+  if (!text || text.toUpperCase() === "NA" || text === "{}") {
+    return "";
+  }
+  if (xml) {
+    return text;
+  }
+  return text;
 }
 
 function hasExpectedResponseContent(value) {

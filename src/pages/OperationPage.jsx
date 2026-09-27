@@ -6,6 +6,8 @@ import JsonPathAssertionsPicker from "../components/JsonPathAssertionsPicker";
 import ExtractsPicker from "../components/ExtractsPicker";
 import ExtractValueField, { PlanExtractsProvider } from "../components/ExtractValueField";
 import ImportCurlModal from "../components/ImportCurlModal";
+import DuplicateCaseModal from "../components/DuplicateCaseModal";
+import SavedCaseActions from "../components/SavedCaseActions";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
 import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
 import LastRunsStrip from "../components/LastRunsStrip";
@@ -55,7 +57,8 @@ export default function OperationPage() {
   const [historyKey, setHistoryKey] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [environments, setEnvironments] = useState([]);
-  const [duplicateTarget, setDuplicateTarget] = useState("");
+  const [duplicateModal, setDuplicateModal] = useState(null);
+  const [duplicateSaving, setDuplicateSaving] = useState(false);
   const baseline = useRef("");
   const skipUnsavedPrompt = useRef(false);
   const curlImportRef = useRef(location.state?.curlImport);
@@ -134,15 +137,6 @@ export default function OperationPage() {
       });
     return () => { cancelled = true; };
   }, [specId, envEpoch]);
-
-  const otherEnvironments = useMemo(
-    () => environments.filter((item) => item.id && item.id !== runEnvironment?.id),
-    [environments, runEnvironment?.id]
-  );
-
-  useEffect(() => {
-    setDuplicateTarget(otherEnvironments[0]?.id || "");
-  }, [otherEnvironments]);
 
   const dirty = form ? snapshot(form, requestBody) !== baseline.current : false;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
@@ -367,32 +361,80 @@ export default function OperationPage() {
     }
   }
 
-  async function duplicateInto() {
-    if (dirty) {
+  function openDuplicateModal(caseItem) {
+    if (!caseItem?.id) {
       toast("Save this case before duplicating", true);
       return;
     }
-    if (!boundCaseId || !duplicateTarget) {
-      toast("Save the case before duplicating into another environment", true);
+    if (caseItem.id === boundCaseId && dirty) {
+      toast("Save changes before duplicating this case", true);
       return;
     }
+    const sourceTestName = caseItem.testName || form?.testName || "Untitled";
+    setDuplicateModal({
+      caseId: caseItem.id,
+      sourceTestName,
+      testName: defaultDuplicateName(sourceTestName),
+      targetEnvironmentId: runEnvironment?.id || environments[0]?.id || "",
+      openCopy: true
+    });
+  }
+
+  function duplicateCurrentCase() {
+    openDuplicateModal(
+      cases.find((item) => item.id === boundCaseId) || (boundCaseId ? { id: boundCaseId, testName: form?.testName } : null)
+    );
+  }
+
+  async function confirmDuplicate() {
+    if (!duplicateModal) {
+      return;
+    }
+    const { caseId, testName, targetEnvironmentId, openCopy } = duplicateModal;
+    if (!testName.trim() || !targetEnvironmentId) {
+      return;
+    }
+    setDuplicateSaving(true);
     try {
-      const copied = await Api.duplicateCase(boundCaseId, {
+      let copied = await Api.duplicateCase(caseId, {
         fromEnvironmentId: runEnvironment?.id,
-        toEnvironmentId: duplicateTarget
+        toEnvironmentId: targetEnvironmentId
       });
-      const target = environments.find((item) => item.id === duplicateTarget);
-      sessionStorage.setItem(`testdata.env.${specId}`, duplicateTarget);
-      await Api.applyEnvironment(specId, duplicateTarget);
-      if (onSpecUpdated) {
-        onSpecUpdated(await Api.getSpec(specId));
+      const desiredName = testName.trim();
+      if (desiredName !== copied.testName) {
+        copied = await Api.updateCase(
+          copied.id,
+          caseUpdateFromView(copied, { testName: desiredName }, targetEnvironmentId)
+        );
       }
-      onEnvironmentsChanged?.();
-      skipUnsavedPrompt.current = true;
-      toast(`Created a copy in ${target?.name || "environment"}`);
-      navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${copied.id}`);
+      const target = environments.find((item) => item.id === targetEnvironmentId);
+      setDuplicateModal(null);
+      if (targetEnvironmentId === runEnvironment?.id) {
+        upsertCase(copied);
+      } else {
+        await refreshPlanCases();
+      }
+      if (openCopy) {
+        if (targetEnvironmentId !== runEnvironment?.id) {
+          sessionStorage.setItem(`testdata.env.${specId}`, targetEnvironmentId);
+          await Api.applyEnvironment(specId, targetEnvironmentId);
+          if (onSpecUpdated) {
+            onSpecUpdated(await Api.getSpec(specId));
+          }
+          onEnvironmentsChanged?.();
+        }
+        skipUnsavedPrompt.current = true;
+        navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${copied.id}`);
+        toast(target?.name ? `Opened copy in ${target.name}` : "Opened copy");
+      } else {
+        toast(target?.name && targetEnvironmentId !== runEnvironment?.id
+          ? `Created copy in ${target.name}`
+          : "Created copy");
+      }
     } catch (error) {
       toast(error.message, true);
+    } finally {
+      setDuplicateSaving(false);
     }
   }
 
@@ -500,6 +542,11 @@ export default function OperationPage() {
             <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
               New case
             </button>
+            {boundCaseId ? (
+              <button type="button" className="btn" onClick={duplicateCurrentCase}>
+                Duplicate
+              </button>
+            ) : null}
             {spec?.manual ? (
               <button type="button" className="btn danger" onClick={removeApi}>
                 Remove API
@@ -529,18 +576,6 @@ export default function OperationPage() {
       {runEnvironment?.name ? (
         <div className="status-banner ok">
           Cases in <strong>{runEnvironment.name}</strong>. Save, update, and delete apply only here.
-          {boundCaseId && otherEnvironments.length ? (
-            <div className="actions" style={{ marginTop: 8 }}>
-              <select value={duplicateTarget} onChange={(event) => setDuplicateTarget(event.target.value)}>
-                {otherEnvironments.map((environment) => (
-                  <option key={environment.id} value={environment.id}>{environment.name}</option>
-                ))}
-              </select>
-              <button type="button" className="btn" onClick={duplicateInto}>
-                Duplicate into {otherEnvironments.find((item) => item.id === duplicateTarget)?.name || "environment"}
-              </button>
-            </div>
-          ) : null}
         </div>
       ) : null}
 
@@ -735,17 +770,15 @@ export default function OperationPage() {
                     <strong>{item.testName}</strong>
                     <div className="hint">{item.method} {item.endpoint}</div>
                   </div>
-                  <div className="inline-actions">
-                    <button type="button" className="btn" onClick={() => runSaved(item.id)} disabled={!!running}>
-                      {running === item.id ? "Running…" : "Run"}
-                    </button>
-                    <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${item.id}`)}>
-                      Edit
-                    </button>
-                    <button type="button" className="btn danger" onClick={() => remove(item.id)}>
-                      Delete
-                    </button>
-                  </div>
+                  <SavedCaseActions
+                    testName={item.testName}
+                    running={running === item.id}
+                    runDisabled={!!running}
+                    onRun={() => runSaved(item.id)}
+                    onEdit={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${item.id}`)}
+                    onDuplicate={() => openDuplicateModal(item)}
+                    onDelete={() => remove(item.id)}
+                  />
                 </div>
               </div>
             ))}
@@ -767,6 +800,28 @@ export default function OperationPage() {
         allowCreate
         onClose={() => setImportOpen(false)}
         onImport={handleCurlImport}
+      />
+    ) : null}
+    {duplicateModal ? (
+      <DuplicateCaseModal
+        sourceTestName={duplicateModal.sourceTestName}
+        testName={duplicateModal.testName}
+        onTestNameChange={(testName) => setDuplicateModal((current) => ({ ...current, testName }))}
+        targetEnvironmentId={duplicateModal.targetEnvironmentId}
+        onTargetEnvironmentChange={(targetEnvironmentId) => (
+          setDuplicateModal((current) => ({ ...current, targetEnvironmentId }))
+        )}
+        environments={environments}
+        currentEnvironmentId={runEnvironment?.id}
+        openCopy={duplicateModal.openCopy}
+        onOpenCopyChange={(openCopy) => setDuplicateModal((current) => ({ ...current, openCopy }))}
+        saving={duplicateSaving}
+        onConfirm={confirmDuplicate}
+        onClose={() => {
+          if (!duplicateSaving) {
+            setDuplicateModal(null);
+          }
+        }}
       />
     ) : null}
     </PlanExtractsProvider>
@@ -798,6 +853,40 @@ function decodeRequestBody(body, schema, contentType) {
 function blankNa(value) {
   if (value == null) return "";
   return String(value).trim().toUpperCase() === "NA" ? "" : value;
+}
+
+function defaultDuplicateName(testName) {
+  const base = String(testName || "Untitled").trim() || "Untitled";
+  if (/^copy of /i.test(base)) {
+    return `${base} (2)`;
+  }
+  return `Copy of ${base}`;
+}
+
+function caseUpdateFromView(item, patch, environmentId) {
+  return {
+    specId: item.specId,
+    planId: item.planId,
+    operationKey: item.operationKey,
+    testName: item.testName,
+    pathParams: item.pathParams,
+    queryParams: item.queryParams,
+    headers: item.headers,
+    cookieParams: item.cookieParams,
+    requestBody: item.requestBody,
+    statusCode: item.statusCode,
+    responseType: item.responseType,
+    expectedResponse: item.expectedResponse,
+    enabled: item.enabled,
+    testGroup: item.testGroup,
+    jsonPathAssertions: item.jsonPathAssertions,
+    extracts: item.extracts,
+    maxResponseTimeMs: item.maxResponseTimeMs,
+    contentType: item.contentType,
+    baseUrl: item.baseUrl,
+    environmentId,
+    ...patch
+  };
 }
 
 function blankOperationCase(operation, spec) {

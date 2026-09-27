@@ -5,6 +5,7 @@ import { canManageMembers, isBillingEnabled, isWorkspaceReady, clearSession } fr
 import Sidebar, { reloadSpecToast } from "../components/Sidebar";
 import WorkspaceBar from "../components/WorkspaceBar";
 import AddApiModal from "../components/AddApiModal";
+import SidebarQuickAdd from "../components/SidebarQuickAdd";
 import { useToast } from "../components/Toast";
 import { operationRequestFromCurl } from "../curlImport";
 
@@ -94,9 +95,11 @@ export default function StudioLayout() {
     if (!location.state?.addApi) {
       return;
     }
-    setAddApiOpen(true);
+    if (spec?.manual) {
+      setAddApiOpen(true);
+    }
     navigate(location.pathname, { replace: true, state: {} });
-  }, [location.state, location.pathname, navigate]);
+  }, [location.state, location.pathname, navigate, spec?.manual]);
 
   if (environmentSpecId !== specId) {
     setEnvironmentSpecId(specId);
@@ -188,6 +191,11 @@ export default function StudioLayout() {
     return created;
   }
 
+  async function quickAddManualOperation(payload) {
+    const created = await saveManualOperation(payload);
+    return created;
+  }
+
   async function handleSpecUpdated(updated) {
     setSpec(updated);
     try {
@@ -251,6 +259,9 @@ export default function StudioLayout() {
           caseCounts={caseCounts}
           search={search}
           onSearch={setSearch}
+          quickAdd={spec?.manual ? (
+            <SidebarQuickAdd onAdd={quickAddManualOperation} />
+          ) : null}
         />
       ) : (
         <aside className="sidebar">
@@ -269,7 +280,7 @@ export default function StudioLayout() {
             onSelectPlan={selectPlan}
             onPlansChange={reloadPlans}
             onReloadSpec={reloadSpec}
-            onAddApi={() => setAddApiOpen(true)}
+            onAddApi={spec?.manual ? () => setAddApiOpen(true) : undefined}
             caseCount={cases.length}
             onSpecRenamed={handleSpecUpdated}
             envEpoch={envEpoch}
@@ -295,7 +306,7 @@ export default function StudioLayout() {
               reloadCases,
               reloadOperations,
               caseCounts,
-              onAddApi: () => setAddApiOpen(true),
+              onAddApi: spec?.manual ? () => setAddApiOpen(true) : undefined,
               importCurlAsCase,
               deleteManualOperation,
               onSpecUpdated: handleSpecUpdated,
