@@ -7,6 +7,7 @@ import LastRunsStrip from "../components/LastRunsStrip";
 import RunResultPanel, { resultBadge } from "../components/RunResultPanel";
 import RunIconButton from "../components/RunIconButton";
 import { useToast } from "../components/Toast";
+import { formatCaseAuditCell } from "../caseAudit";
 
 export default function CasesPage() {
   const { specId } = useParams();
@@ -305,8 +306,8 @@ export default function CasesPage() {
                   />
                 </th>
                 {(spec?.manual
-                  ? ["Test name", "API label", "Method", "Endpoint", "Group", "Status", "On", "Result", ""]
-                  : ["Name", "Method", "Endpoint", "Group", "Status", "On", "Result", ""]
+                  ? ["Test name", "API label", "Method", "Endpoint", "Group", "Status", "On", "Updated", "Result", ""]
+                  : ["Name", "Method", "Endpoint", "Group", "Status", "On", "Updated", "Result", ""]
                 ).map((text) => <th key={text}>{text}</th>)}
               </tr>
             </thead>
@@ -335,6 +336,7 @@ export default function CasesPage() {
                   <td>{item.testGroup}</td>
                   <td>{item.statusCode}</td>
                   <td>{item.enabled === "N" ? "No" : "Yes"}</td>
+                  <td className="case-audit-cell">{formatCaseAuditCell(item)}</td>
                   <td onClick={(event) => {
                     event.stopPropagation();
                     if (runById[item.id]) setSelectedResult(runById[item.id]);
