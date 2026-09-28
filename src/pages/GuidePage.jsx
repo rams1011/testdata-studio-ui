@@ -57,6 +57,10 @@ export default function GuidePage() {
 
           <section id="home" className="guide-section">
             <h2>Home and specs</h2>
+            <p>
+              Saved items appear under <strong>Your APIs</strong> — use the <strong>OpenAPI specs</strong> and{" "}
+              <strong>REST catalogs</strong> tabs, then label groups (e.g. General) within each tab.
+            </p>
             <p>From the home page you can:</p>
             <ul>
               <li><strong>Start without OpenAPI</strong> — catalog name plus first method/path; opens the case editor immediately.</li>
