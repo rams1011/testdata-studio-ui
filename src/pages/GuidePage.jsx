@@ -58,8 +58,8 @@ export default function GuidePage() {
           <section id="home" className="guide-section">
             <h2>Home and specs</h2>
             <p>
-              Saved items appear under <strong>Your APIs</strong> — use the <strong>OpenAPI specs</strong> and{" "}
-              <strong>REST catalogs</strong> tabs, then label groups (e.g. General) within each tab.
+              Saved items appear under <strong>Your APIs</strong> — use the <strong>OpenAPI specs</strong> tab (and{" "}
+              <strong>REST catalogs</strong> when you have any), then label groups (e.g. General) within each tab.
             </p>
             <p>From the home page you can:</p>
             <ul>

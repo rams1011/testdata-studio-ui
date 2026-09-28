@@ -96,6 +96,7 @@ export default function LoadSpecPage() {
     const haystack = `${spec.name || ""} ${spec.title || ""} ${spec.label || ""} ${spec.baseUrl || ""}`.toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
   });
+  const hasRestCatalogs = partitionSpecs(backend.specs || []).rest.length > 0;
 
   function onSpecCreated(spec, meta) {
     touchRecentSpec(spec.specId);
@@ -378,6 +379,7 @@ export default function LoadSpecPage() {
         ) : (
           <HomeSpecLibrary
             specs={specs}
+            showRestTab={hasRestCatalogs}
             navigate={navigate}
             workspacePending={workspacePending}
             reloadingId={reloadingId}
@@ -507,6 +509,7 @@ const NEW_WORKSPACE_VALUE = "__new_workspace__";
 
 function HomeSpecLibrary({
   specs,
+  showRestTab,
   navigate,
   workspacePending,
   reloadingId,
@@ -518,19 +521,23 @@ function HomeSpecLibrary({
   const [libraryTab, setLibraryTab] = useState("openapi");
 
   useEffect(() => {
+    if (!showRestTab) {
+      if (libraryTab !== "openapi") setLibraryTab("openapi");
+      return;
+    }
     if (libraryTab === "openapi" && !openApi.length && rest.length) {
       setLibraryTab("rest");
     } else if (libraryTab === "rest" && !rest.length && openApi.length) {
       setLibraryTab("openapi");
     }
-  }, [openApi.length, rest.length, libraryTab]);
+  }, [openApi.length, rest.length, libraryTab, showRestTab]);
 
   return (
     <div className="spec-library">
       <div
         className="body-editor-tabs spec-library-tabs"
         role="tablist"
-        aria-label="OpenAPI specs and REST catalogs"
+        aria-label={showRestTab ? "OpenAPI specs and REST catalogs" : "OpenAPI specs"}
       >
         <button
           type="button"
@@ -543,17 +550,19 @@ function HomeSpecLibrary({
         >
           OpenAPI specs{openApi.length ? ` (${openApi.length})` : ""}
         </button>
-        <button
-          type="button"
-          role="tab"
-          id="home-library-tab-rest"
-          aria-selected={libraryTab === "rest"}
-          aria-controls="home-library-panel-rest"
-          className={libraryTab === "rest" ? "active" : ""}
-          onClick={() => setLibraryTab("rest")}
-        >
-          REST catalogs{rest.length ? ` (${rest.length})` : ""}
-        </button>
+        {showRestTab ? (
+          <button
+            type="button"
+            role="tab"
+            id="home-library-tab-rest"
+            aria-selected={libraryTab === "rest"}
+            aria-controls="home-library-panel-rest"
+            className={libraryTab === "rest" ? "active" : ""}
+            onClick={() => setLibraryTab("rest")}
+          >
+            REST catalogs{rest.length ? ` (${rest.length})` : ""}
+          </button>
+        ) : null}
       </div>
       <div
         id="home-library-panel-openapi"
@@ -580,32 +589,34 @@ function HomeSpecLibrary({
           <div className="empty">No OpenAPI specs{specs.length ? " match your search" : ""}.</div>
         )}
       </div>
-      <div
-        id="home-library-panel-rest"
-        role="tabpanel"
-        aria-labelledby="home-library-tab-rest"
-        className="spec-library-panel"
-        hidden={libraryTab !== "rest"}
-      >
-        <p className="hint spec-type-lead">
-          APIs added by method and path without a spec file.
-        </p>
-        {rest.length ? (
-          <SpecLabelGroups
-            specs={rest}
-            countNoun="catalog"
-            navigate={navigate}
-            workspacePending={workspacePending}
-            reloadingId={reloadingId}
-            deletingId={deletingId}
-            onReload={onReload}
-            onDelete={onDelete}
-            hideReload
-          />
-        ) : (
-          <div className="empty">No REST catalogs{specs.length ? " match your search" : ""}.</div>
-        )}
-      </div>
+      {showRestTab ? (
+        <div
+          id="home-library-panel-rest"
+          role="tabpanel"
+          aria-labelledby="home-library-tab-rest"
+          className="spec-library-panel"
+          hidden={libraryTab !== "rest"}
+        >
+          <p className="hint spec-type-lead">
+            APIs added by method and path without a spec file.
+          </p>
+          {rest.length ? (
+            <SpecLabelGroups
+              specs={rest}
+              countNoun="catalog"
+              navigate={navigate}
+              workspacePending={workspacePending}
+              reloadingId={reloadingId}
+              deletingId={deletingId}
+              onReload={onReload}
+              onDelete={onDelete}
+              hideReload
+            />
+          ) : (
+            <div className="empty">No REST catalogs{specs.length ? " match your search" : ""}.</div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
