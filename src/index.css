@@ -1904,6 +1904,26 @@ a { color: inherit; text-decoration: none; }
 .workspace-spec-switch svg {
     display: block;
 }
+.spec-library {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.spec-library-tabs {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    margin-bottom: 12px;
+}
+.spec-library-tabs button {
+    white-space: nowrap;
+}
+.spec-library-panel[hidden] {
+    display: none;
+}
+.spec-type-lead {
+    margin: 0 0 12px;
+}
 .spec-group {
     border: 1px solid var(--line);
     border-radius: var(--radius);

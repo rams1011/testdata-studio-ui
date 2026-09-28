@@ -29,6 +29,19 @@ export function filterSpecs(specs, query) {
   });
 }
 
+export function partitionSpecs(specs) {
+  const openApi = [];
+  const rest = [];
+  (specs || []).forEach((spec) => {
+    if (spec?.manual) {
+      rest.push(spec);
+    } else {
+      openApi.push(spec);
+    }
+  });
+  return { openApi, rest };
+}
+
 export function groupSpecs(specs) {
   const groups = new Map();
   (specs || []).forEach((spec) => {
