@@ -8,6 +8,7 @@ import ExtractValueField, { PlanExtractsProvider } from "../components/ExtractVa
 import ImportCurlModal from "../components/ImportCurlModal";
 import DuplicateCaseModal from "../components/DuplicateCaseModal";
 import SavedCaseActions from "../components/SavedCaseActions";
+import CaseAuditMeta from "../components/CaseAuditMeta";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
 import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
 import LastRunsStrip from "../components/LastRunsStrip";
@@ -611,6 +612,7 @@ export default function OperationPage() {
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Test case</h3>
+            <CaseAuditMeta testCase={cases.find((item) => item.id === boundCaseId)} />
             <Field
               id="op-field-testName"
               label="Test name"
