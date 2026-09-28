@@ -13,11 +13,11 @@ import GuidePage from "./pages/GuidePage";
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
+  { path: "/guide", element: <GuidePage /> },
   {
     element: <RequireAuth />,
     children: [
       { path: "/", element: <LoadSpecPage /> },
-      { path: "/guide", element: <GuidePage /> },
       { path: "/admin", element: <AdminPage /> },
       { path: "/subscriptions", element: <SubscriptionsPage /> },
       {
