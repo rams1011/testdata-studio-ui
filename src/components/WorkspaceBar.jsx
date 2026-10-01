@@ -8,6 +8,7 @@ import SpecMoreMenu from "./SpecMoreMenu";
 import SpecSwitcherModal from "./SpecSwitcherModal";
 import SearchIcon from "./SearchIcon";
 import GuideLink from "./GuideLink";
+import HomeLink from "./HomeLink";
 import { touchRecentSpec } from "../specCatalog";
 
 const SWITCH_SPEC_TIP = typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform)
@@ -542,6 +543,7 @@ export default function WorkspaceBar({
         }}
       />
       <div className="workspace-bar-trailing">
+        <HomeLink />
         <GuideLink />
         <AccountMenu
           account={account}

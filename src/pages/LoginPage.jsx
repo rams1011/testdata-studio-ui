@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Api } from "../api";
 import { isAuthEnabled, isBillingEnabled, saveSession } from "../session";
+import HomeLink from "../components/HomeLink";
 import { useToast } from "../components/Toast";
 
 export default function LoginPage() {
@@ -66,7 +67,12 @@ export default function LoginPage() {
 
   return (
     <div className="hero">
-      <h1>Test Data Studio</h1>
+      <div className="hero-head">
+        <h1>Test Data Studio</h1>
+        <div className="hero-head-actions">
+          <HomeLink />
+        </div>
+      </div>
       <p>
         {billing
           ? "Sign in to a workspace. Specs, collections, and environments stay private to that tenant."

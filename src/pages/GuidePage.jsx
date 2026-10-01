@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import HomeLink from "../components/HomeLink";
 
 const SECTIONS = [
   { id: "overview", title: "Overview" },
@@ -22,11 +22,10 @@ export default function GuidePage() {
   return (
     <div className="hero guide-hero">
       <div className="hero-head guide-head">
-        <h1>
-          <Link to="/" className="guide-home-link">Test Data Studio</Link>
-          <span className="guide-head-sep">·</span>
-          User guide
-        </h1>
+        <h1>User guide</h1>
+        <div className="hero-head-actions">
+          <HomeLink />
+        </div>
       </div>
 
       <div className="guide-layout">
@@ -96,9 +95,11 @@ export default function GuidePage() {
               </dd>
               <dt>Cases</dt>
               <dd>Jump to the plan&apos;s case table — filter, bulk enable/disable, run single cases or the whole plan.</dd>
+              <dt>Home</dt>
+              <dd>House icon at the top right returns to the specs catalog.</dd>
               <dt>Guide</dt>
               <dd>
-                Help icon (<strong>?</strong> in a circle) at the top right, before your account menu, opens this guide in a new browser tab.
+                Help icon (<strong>?</strong> in a circle), next to Home and before your account menu, opens this guide in a new browser tab.
               </dd>
               <dt>More</dt>
               <dd>Spec settings, run <strong>History</strong>, and <strong>Export</strong>.</dd>

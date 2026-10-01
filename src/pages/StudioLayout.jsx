@@ -286,10 +286,10 @@ export default function StudioLayout() {
             envEpoch={envEpoch}
             onEnvironmentChange={handleEnvironmentChange}
             onEnvironmentsChanged={() => setEnvEpoch((current) => current + 1)}
-            account={session?.authenticated ? session.account : null}
+            account={session?.authenticated || session?.account ? session.account : null}
             canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
-            canManageSubscriptions={Boolean(session?.saas && session?.authenticated && isBillingEnabled(session))}
-            onSignOut={session?.saas && session?.authenticated ? signOut : null}
+            canManageSubscriptions={Boolean(session?.authenticated && isBillingEnabled(session))}
+            onSignOut={session?.authenticated || session?.account ? signOut : null}
           />
         ) : null}
         <main className="main">
