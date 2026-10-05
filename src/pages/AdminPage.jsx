@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { Api } from "../api";
-import { canManageMembers, clearSession, isWorkspaceReady, saveSession } from "../session";
+import AccountMenu from "../components/AccountMenu";
+import GuideLink from "../components/GuideLink";
+import HomeLink from "../components/HomeLink";
+import { canManageMembers, clearSession, isBillingEnabled, isWorkspaceReady, saveSession } from "../session";
 import { useToast } from "../components/Toast";
 
 const ROLES = ["MEMBER", "ADMIN", "OWNER"];
@@ -161,7 +164,16 @@ export default function AdminPage() {
       <div className="hero">
         <div className="hero-head">
           <h1>Workspace admin</h1>
-          <Link className="btn" to="/">Back to specs</Link>
+          <div className="hero-head-actions">
+            <HomeLink />
+            <GuideLink />
+            <AccountMenu
+              account={session?.account}
+              canManage={false}
+              canManageSubscriptions={isBillingEnabled(session)}
+              onSignOut={signOut}
+            />
+          </div>
         </div>
         <div className="card">
           <h3>This organization is read-only</h3>
@@ -175,9 +187,15 @@ export default function AdminPage() {
     <div className="hero admin-page">
       <div className="hero-head">
         <h1>Workspace admin</h1>
-        <div className="hero-actions">
-          <Link className="btn" to="/">Back to specs</Link>
-          <button type="button" className="btn" onClick={signOut}>Sign out</button>
+        <div className="hero-head-actions">
+          <HomeLink />
+          <GuideLink />
+          <AccountMenu
+            account={session?.account}
+            canManage={manager}
+            canManageSubscriptions={isBillingEnabled(session)}
+            onSignOut={signOut}
+          />
         </div>
       </div>
       <p>
@@ -190,7 +208,7 @@ export default function AdminPage() {
           <h3>You need owner or admin access</h3>
           <p className="hint">Ask a workspace owner to promote you if you should manage members.</p>
           <div className="actions">
-            <Link className="btn primary" to="/">Back to specs</Link>
+            <HomeLink />
           </div>
         </div>
       ) : (

@@ -6,14 +6,34 @@ import JsonPathAssertionsPicker from "../components/JsonPathAssertionsPicker";
 import ExtractsPicker from "../components/ExtractsPicker";
 import ExtractValueField, { PlanExtractsProvider } from "../components/ExtractValueField";
 import ImportCurlModal from "../components/ImportCurlModal";
+import DuplicateCaseModal from "../components/DuplicateCaseModal";
+import SavedCaseActions from "../components/SavedCaseActions";
+import CaseAuditMeta from "../components/CaseAuditMeta";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
 import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
 import LastRunsStrip from "../components/LastRunsStrip";
+import ValidationSummary from "../components/ValidationSummary";
+import {
+  blockerTitle,
+  caseSaveIssues,
+  draftRunIssues,
+  missingRequiredParamKeys,
+  paramAnchorId,
+  jumpToValidationItem
+} from "../caseValidation";
 import RunResultPanel from "../components/RunResultPanel";
 import Collapsible from "../components/Collapsible";
 import StatusCodeField from "../components/StatusCodeField";
 import { useToast } from "../components/Toast";
-import { collectPlanExtracts, emptyFromSchema, hasResponseBodySchema, isEffectivelyEmpty, missingRequiredSchemaFields, typeWatermark } from "../schema";
+import {
+  allowsManualRequestBody,
+  collectPlanExtracts,
+  manualRequestBodySchema,
+  manualResponseBodySchema,
+  normalizeRequestBodyTemplate,
+  templateFromSchema,
+  typeWatermark
+} from "../schema";
 import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { applyCurlImport } from "../curlImport";
@@ -22,7 +42,18 @@ import { formatInstant } from "../formatInstant";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
-  const { spec, planId, operations, importCurlAsCase, deleteManualOperation, onSpecUpdated, runEnvironment, envEpoch, onEnvironmentsChanged } = useOutletContext();
+  const {
+    spec,
+    planId,
+    operations,
+    importCurlAsCase,
+    deleteManualOperation,
+    onSpecUpdated,
+    runEnvironment,
+    environmentReady,
+    envEpoch,
+    onEnvironmentsChanged
+  } = useOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -38,7 +69,9 @@ export default function OperationPage() {
   const [historyKey, setHistoryKey] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [environments, setEnvironments] = useState([]);
-  const [duplicateTarget, setDuplicateTarget] = useState("");
+  const [duplicateModal, setDuplicateModal] = useState(null);
+  const [duplicateSaving, setDuplicateSaving] = useState(false);
+  const [paramSubTab, setParamSubTab] = useState("path");
   const baseline = useRef("");
   const [caseRevision, setCaseRevision] = useState(null);
   const [caseEditor, setCaseEditor] = useState(null);
@@ -53,6 +86,10 @@ export default function OperationPage() {
     setBoundCaseId(caseId);
     skipUnsavedPrompt.current = false;
   }, [caseId]);
+
+  useEffect(() => {
+    setParamSubTab("path");
+  }, [operationKey]);
 
   useEffect(() => {
     if (!planId) return;
@@ -77,9 +114,13 @@ export default function OperationPage() {
       let nextForm = existing ? formFromCase(existing) : blank.form;
       nextForm.contentType = matchedContentType(nextForm.contentType, nextOperation.requestContentTypes)
         || nextForm.contentType;
-      let nextBody = existing
-        ? decodeRequestBody(existing.requestBody, nextOperation.requestBody?.jsonSchema, nextForm.contentType)
-        : blank.requestBody;
+      const bodySchema = manualRequestBodySchema(nextOperation, spec?.manual);
+      let nextBody = normalizeRequestBodyTemplate(
+        existing
+          ? decodeRequestBody(existing.requestBody, bodySchema, nextForm.contentType)
+          : blank.requestBody,
+        bodySchema
+      );
       if (curlImport) {
         const applied = applyCurlImport({
           form: blank.form,
@@ -167,15 +208,6 @@ export default function OperationPage() {
     return () => { cancelled = true; };
   }, [specId, envEpoch]);
 
-  const otherEnvironments = useMemo(
-    () => environments.filter((item) => item.id && item.id !== runEnvironment?.id),
-    [environments, runEnvironment?.id]
-  );
-
-  useEffect(() => {
-    setDuplicateTarget(otherEnvironments[0]?.id || "");
-  }, [otherEnvironments]);
-
   const dirty = form ? snapshot(form, requestBody) !== baseline.current : false;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (skipUnsavedPrompt.current) {
@@ -229,7 +261,6 @@ export default function OperationPage() {
 
   const visibleParamGroups = useMemo(() => ({
     path: withImportedParams(paramGroups.path, form?.pathParams, "path"),
-    query: withImportedParams(paramGroups.query, form?.queryParams, "query"),
     cookie: withImportedParams(paramGroups.cookie, form?.cookieParams, "cookie")
   }), [paramGroups, form]);
 
@@ -446,7 +477,7 @@ export default function OperationPage() {
       contentType: form.contentType || "NA",
       statusCode: Number(form.statusCode),
       maxResponseTimeMs: Number(form.maxResponseTimeMs),
-      requestBody: operation.requestBody ? requestBody : null,
+      requestBody: allowsManualRequestBody(operation, spec?.manual) ? requestBody : null,
       environmentId: runEnvironment?.id
     };
   }
@@ -470,32 +501,80 @@ export default function OperationPage() {
     }
   }
 
-  async function duplicateInto() {
-    if (dirty) {
+  function openDuplicateModal(caseItem) {
+    if (!caseItem?.id) {
       toast("Save this case before duplicating", true);
       return;
     }
-    if (!boundCaseId || !duplicateTarget) {
-      toast("Save the case before duplicating into another environment", true);
+    if (caseItem.id === boundCaseId && dirty) {
+      toast("Save changes before duplicating this case", true);
       return;
     }
+    const sourceTestName = caseItem.testName || form?.testName || "Untitled";
+    setDuplicateModal({
+      caseId: caseItem.id,
+      sourceTestName,
+      testName: defaultDuplicateName(sourceTestName),
+      targetEnvironmentId: runEnvironment?.id || environments[0]?.id || "",
+      openCopy: true
+    });
+  }
+
+  function duplicateCurrentCase() {
+    openDuplicateModal(
+      cases.find((item) => item.id === boundCaseId) || (boundCaseId ? { id: boundCaseId, testName: form?.testName } : null)
+    );
+  }
+
+  async function confirmDuplicate() {
+    if (!duplicateModal) {
+      return;
+    }
+    const { caseId, testName, targetEnvironmentId, openCopy } = duplicateModal;
+    if (!testName.trim() || !targetEnvironmentId) {
+      return;
+    }
+    setDuplicateSaving(true);
     try {
-      const copied = await Api.duplicateCase(boundCaseId, {
+      let copied = await Api.duplicateCase(caseId, {
         fromEnvironmentId: runEnvironment?.id,
-        toEnvironmentId: duplicateTarget
+        toEnvironmentId: targetEnvironmentId
       });
-      const target = environments.find((item) => item.id === duplicateTarget);
-      sessionStorage.setItem(`testdata.env.${specId}`, duplicateTarget);
-      await Api.applyEnvironment(specId, duplicateTarget);
-      if (onSpecUpdated) {
-        onSpecUpdated(await Api.getSpec(specId));
+      const desiredName = testName.trim();
+      if (desiredName !== copied.testName) {
+        copied = await Api.updateCase(
+          copied.id,
+          caseUpdateFromView(copied, { testName: desiredName }, targetEnvironmentId)
+        );
       }
-      onEnvironmentsChanged?.();
-      skipUnsavedPrompt.current = true;
-      toast(`Created a copy in ${target?.name || "environment"}`);
-      navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${copied.id}`);
+      const target = environments.find((item) => item.id === targetEnvironmentId);
+      setDuplicateModal(null);
+      if (targetEnvironmentId === runEnvironment?.id) {
+        upsertCase(copied);
+      } else {
+        await refreshPlanCases();
+      }
+      if (openCopy) {
+        if (targetEnvironmentId !== runEnvironment?.id) {
+          sessionStorage.setItem(`testdata.env.${specId}`, targetEnvironmentId);
+          await Api.applyEnvironment(specId, targetEnvironmentId);
+          if (onSpecUpdated) {
+            onSpecUpdated(await Api.getSpec(specId));
+          }
+          onEnvironmentsChanged?.();
+        }
+        skipUnsavedPrompt.current = true;
+        navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${copied.id}`);
+        toast(target?.name ? `Opened copy in ${target.name}` : "Opened copy");
+      } else {
+        toast(target?.name && targetEnvironmentId !== runEnvironment?.id
+          ? `Created copy in ${target.name}`
+          : "Created copy");
+      }
     } catch (error) {
       toast(error.message, true);
+    } finally {
+      setDuplicateSaving(false);
     }
   }
 
@@ -534,7 +613,7 @@ export default function OperationPage() {
     function onKey(event) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (form && operation && !caseSaveBlockers(form, operation, requestBody).length) {
+        if (form && operation && !caseSaveIssues(form, operation, requestBody).length) {
           save();
         }
       }
@@ -543,14 +622,39 @@ export default function OperationPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [form, operation, requestBody, caseId]);
 
-  const tryRequestBlockers = useMemo(
-    () => (form && operation ? draftRunBlockers(form, operation) : ["Form is still loading"]),
+  const tryRequestIssues = useMemo(
+    () => (form && operation ? draftRunIssues(form, operation) : []),
     [form, operation]
   );
-  const saveBlockers = useMemo(
-    () => (form && operation ? caseSaveBlockers(form, operation, requestBody) : ["Form is still loading"]),
+  const saveIssueGroups = useMemo(
+    () => (form && operation ? caseSaveIssues(form, operation, requestBody) : []),
     [form, operation, requestBody]
   );
+  function jumpToField(item) {
+    const anchorId = item?.anchorId || "";
+    if (anchorId.includes("op-param-path-")) {
+      setParamSubTab("path");
+    } else if (anchorId.includes("op-param-query-")) {
+      setParamSubTab("query");
+    } else if (anchorId.includes("op-param-header-")) {
+      setParamSubTab("headers");
+    }
+    window.requestAnimationFrame(() => jumpToValidationItem(item));
+  }
+
+  const missingParamKeys = useMemo(
+    () => (form && operation ? missingRequiredParamKeys(form, operation) : new Set()),
+    [form, operation]
+  );
+  const missingSaveKeys = useMemo(() => {
+    const keys = new Set();
+    saveIssueGroups.forEach((group) => {
+      group.items.forEach((item) => keys.add(item.key));
+    });
+    return keys;
+  }, [saveIssueGroups]);
+  const saveBlocked = !form || !operation || saveIssueGroups.length > 0;
+  const tryRequestBlocked = !form || !operation || tryRequestIssues.length > 0;
 
   if (!operation || !form) {
     return <div className="empty">Loading operation schema…</div>;
@@ -593,8 +697,8 @@ export default function OperationPage() {
               type="button"
               className="btn"
               onClick={runCurrent}
-              disabled={!!running || tryRequestBlockers.length > 0}
-              title={tryRequestBlockers[0] || "Send the current form without saving"}
+              disabled={!!running || tryRequestBlocked}
+              title={blockerTitle(tryRequestIssues, "Send the current form without saving")}
             >
               {running === "current" ? "Trying…" : "Try this request"}
             </button>
@@ -604,6 +708,11 @@ export default function OperationPage() {
             <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
               New case
             </button>
+            {boundCaseId ? (
+              <button type="button" className="btn" onClick={duplicateCurrentCase}>
+                Duplicate
+              </button>
+            ) : null}
             {spec?.manual ? (
               <button type="button" className="btn danger" onClick={removeApi}>
                 Remove API
@@ -613,16 +722,16 @@ export default function OperationPage() {
               type="button"
               className="btn primary"
               onClick={save}
-              disabled={saveBlockers.length > 0}
-              title={saveBlockers[0] || (boundCaseId ? "Update the saved case" : "Save the test case")}
+              disabled={saveBlocked}
+              title={blockerTitle(saveIssueGroups, boundCaseId ? "Update the saved case" : "Save the test case")}
             >
               {boundCaseId ? "Update" : "Save"}
             </button>
           </div>
-          {saveBlockers.length ? (
-            <p className="hint try-request-hint">{saveBlockers.join(". ")}.</p>
-          ) : tryRequestBlockers.length ? (
-            <p className="hint try-request-hint">{tryRequestBlockers.join(". ")}.</p>
+          {saveIssueGroups.length ? (
+            <ValidationSummary groups={saveIssueGroups} className="try-request-hint" onJump={jumpToField} />
+          ) : tryRequestIssues.length ? (
+            <ValidationSummary groups={tryRequestIssues} className="try-request-hint" onJump={jumpToField} />
           ) : null}
         </div>
       </div>
@@ -633,18 +742,6 @@ export default function OperationPage() {
       {runEnvironment?.name ? (
         <div className="status-banner ok">
           Cases in <strong>{runEnvironment.name}</strong>. Save, update, and delete apply only here.
-          {boundCaseId && otherEnvironments.length ? (
-            <div className="actions" style={{ marginTop: 8 }}>
-              <select value={duplicateTarget} onChange={(event) => setDuplicateTarget(event.target.value)}>
-                {otherEnvironments.map((environment) => (
-                  <option key={environment.id} value={environment.id}>{environment.name}</option>
-                ))}
-              </select>
-              <button type="button" className="btn" onClick={duplicateInto}>
-                Duplicate into {otherEnvironments.find((item) => item.id === duplicateTarget)?.name || "environment"}
-              </button>
-            </div>
-          ) : null}
         </div>
       ) : null}
 
@@ -654,7 +751,15 @@ export default function OperationPage() {
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Test case</h3>
-            <Field label="Test name" required value={form.testName} onChange={(testName) => setForm({ ...form, testName })} />
+            <CaseAuditMeta testCase={cases.find((item) => item.id === boundCaseId)} />
+            <Field
+              id="op-field-testName"
+              label="Test name"
+              required
+              invalid={missingSaveKeys.has("testName")}
+              value={form.testName}
+              onChange={(testName) => setForm({ ...form, testName })}
+            />
             <div className="row-2">
               <Field label="Test group" value={form.testGroup} onChange={(testGroup) => setForm({ ...form, testGroup })} />
               <SelectField label="Enabled" value={form.enabled} options={["Y", "N"]} onChange={(enabled) => setForm({ ...form, enabled })} />
@@ -673,11 +778,19 @@ export default function OperationPage() {
                 onChange={(baseUrl) => setForm({ ...form, baseUrl })}
               />
             ) : null}
-            <Field label="Base URL" required value={form.baseUrl} onChange={(baseUrl) => setForm({ ...form, baseUrl })} />
-            <div className="row-3">
+            <Field
+              id="op-field-baseUrl"
+              label="Base URL"
+              required
+              invalid={missingSaveKeys.has("baseUrl")}
+              value={form.baseUrl}
+              onChange={(baseUrl) => setForm({ ...form, baseUrl })}
+            />
+            <div className="row-3" id="op-field-statusCode">
               <StatusCodeField
                 value={form.statusCode}
                 options={statusOptions}
+                invalid={missingSaveKeys.has("statusCode")}
                 onChange={(statusCode) => setForm({ ...form, statusCode })}
               />
               <SelectField
@@ -715,26 +828,111 @@ export default function OperationPage() {
                 ? "Choose an extracted field from an earlier case, or type a literal value."
                 : "No extracted fields in this plan yet. On another case, pick fields under Extract for later cases."}
             </p>
-            <ParamGroup label="Path" parameters={visibleParamGroups.path} values={form.pathParams} onChange={(pathParams) => setForm({ ...form, pathParams })} />
-            <ParamGroup label="Query" parameters={visibleParamGroups.query} values={form.queryParams} onChange={(queryParams) => setForm({ ...form, queryParams })} />
-            <HeaderParamGroup
-              specParameters={paramGroups.header}
-              values={form.headers}
-              onChange={(headers) => setForm({ ...form, headers })}
+            <div
+              className="body-editor-tabs param-subtabs"
+              role="tablist"
+              aria-label="Path, query, and headers"
+            >
+              <button
+                type="button"
+                role="tab"
+                id="op-param-tab-path"
+                aria-selected={paramSubTab === "path"}
+                aria-controls="op-param-panel-path"
+                className={paramSubTab === "path" ? "active" : ""}
+                onClick={() => setParamSubTab("path")}
+              >
+                Path
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="op-param-tab-query"
+                aria-selected={paramSubTab === "query"}
+                aria-controls="op-param-panel-query"
+                className={paramSubTab === "query" ? "active" : ""}
+                onClick={() => setParamSubTab("query")}
+              >
+                Query
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="op-param-tab-headers"
+                aria-selected={paramSubTab === "headers"}
+                aria-controls="op-param-panel-headers"
+                className={paramSubTab === "headers" ? "active" : ""}
+                onClick={() => setParamSubTab("headers")}
+              >
+                Headers
+              </button>
+            </div>
+            <div
+              id="op-param-panel-path"
+              role="tabpanel"
+              aria-labelledby="op-param-tab-path"
+              className="param-subtab-panel"
+              hidden={paramSubTab !== "path"}
+            >
+              <ParamGroup
+                label="Path"
+                embedded
+                parameters={visibleParamGroups.path}
+                values={form.pathParams}
+                missingKeys={missingParamKeys}
+                onChange={(pathParams) => setForm({ ...form, pathParams })}
+              />
+            </div>
+            <div
+              id="op-param-panel-query"
+              role="tabpanel"
+              aria-labelledby="op-param-tab-query"
+              className="param-subtab-panel"
+              hidden={paramSubTab !== "query"}
+            >
+              <QueryParamGroup
+                specParameters={paramGroups.query}
+                values={form.queryParams}
+                missingKeys={missingParamKeys}
+                onChange={(queryParams) => setForm({ ...form, queryParams })}
+              />
+            </div>
+            <div
+              id="op-param-panel-headers"
+              role="tabpanel"
+              aria-labelledby="op-param-tab-headers"
+              className="param-subtab-panel"
+              hidden={paramSubTab !== "headers"}
+            >
+              <HeaderParamGroup
+                specParameters={paramGroups.header}
+                values={form.headers}
+                onChange={(headers) => setForm({ ...form, headers })}
+              />
+            </div>
+            <ParamGroup
+              label="Cookies"
+              parameters={visibleParamGroups.cookie}
+              values={form.cookieParams}
+              missingKeys={missingParamKeys}
+              onChange={(cookieParams) => setForm({ ...form, cookieParams })}
             />
-            <ParamGroup label="Cookies" parameters={visibleParamGroups.cookie} values={form.cookieParams} onChange={(cookieParams) => setForm({ ...form, cookieParams })} />
           </div>
 
-          <div className="card" style={{ marginTop: 16 }}>
+          <div
+            className={`card${saveIssueGroups.some((group) => group.id === "body") ? " card-section-missing" : ""}`}
+            style={{ marginTop: 16 }}
+            id="op-section-request-body"
+          >
             <h3>Request body{operation.requestBody?.required ? <span className="req"> *</span> : null}</h3>
-            {operation.requestBody ? (
+            {allowsManualRequestBody(operation, spec?.manual) ? (
               <RequestBodyEditor
                 key={`${operationKey}-${caseId || "new"}`}
                 resetKey={`${operationKey}-${caseId || "new"}`}
                 caseId={boundCaseId}
                 onEnsureCase={ensureCase}
                 onFileCommitted={commitRequestBody}
-                schema={operation.requestBody.jsonSchema}
+                schema={manualRequestBodySchema(operation, spec?.manual)}
                 value={requestBody}
                 onChange={setRequestBody}
                 contentType={form.contentType}
@@ -750,8 +948,7 @@ export default function OperationPage() {
             <ExpectedResponseEditor
               key={`${operationKey}-${caseId || "new"}-expected`}
               resetKey={`${operationKey}-${caseId || "new"}`}
-              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
-              sample={hasResponseBodySchema(operation.response) ? operation.response.sample : null}
+              schema={manualResponseBodySchema(operation, spec?.manual)}
               value={form.expectedResponse}
               onChange={(expectedResponse) => setForm((current) => ({ ...current, expectedResponse }))}
               contentType={operation.response?.contentType || form.contentType}
@@ -766,7 +963,7 @@ export default function OperationPage() {
 
           <Collapsible title="JSONPath assertions" hint="Off until you pick paths">
             <JsonPathAssertionsPicker
-              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
+              schema={manualResponseBodySchema(operation, spec?.manual)}
               expectedResponse={form.expectedResponse}
               value={form.jsonPathAssertions}
               onChange={(jsonPathAssertions) => setForm((current) => ({ ...current, jsonPathAssertions }))}
@@ -779,7 +976,7 @@ export default function OperationPage() {
             defaultOpen
           >
             <ExtractsPicker
-              schema={hasResponseBodySchema(operation.response) ? operation.response.jsonSchema : null}
+              schema={manualResponseBodySchema(operation, spec?.manual)}
               expectedResponse={form.expectedResponse}
               runResult={runResult}
               value={form.extracts}
@@ -789,12 +986,6 @@ export default function OperationPage() {
         </div>
 
         <div>
-          <LastRunsStrip
-            specId={specId}
-            planId={planId}
-            caseId={boundCaseId || undefined}
-            refreshKey={historyKey}
-          />
           <RunResultPanel result={runResult} />
           {boundCaseId && auditEvents.length ? (
             <div style={{ marginTop: 16 }}>
@@ -826,21 +1017,27 @@ export default function OperationPage() {
                     <strong>{item.testName}</strong>
                     <div className="hint">{item.method} {item.endpoint}</div>
                   </div>
-                  <div className="inline-actions">
-                    <button type="button" className="btn" onClick={() => runSaved(item.id)} disabled={!!running}>
-                      {running === item.id ? "Running…" : "Run"}
-                    </button>
-                    <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${item.id}`)}>
-                      Edit
-                    </button>
-                    <button type="button" className="btn danger" onClick={() => remove(item.id)}>
-                      Delete
-                    </button>
-                  </div>
+                  <SavedCaseActions
+                    testName={item.testName}
+                    running={running === item.id}
+                    runDisabled={!!running}
+                    onRun={() => runSaved(item.id)}
+                    onEdit={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${item.id}`)}
+                    onDuplicate={() => openDuplicateModal(item)}
+                    onDelete={() => remove(item.id)}
+                  />
                 </div>
               </div>
             ))}
           </div>
+          <LastRunsStrip
+            specId={specId}
+            planId={planId}
+            caseId={boundCaseId || undefined}
+            environmentId={runEnvironment?.id}
+            environmentReady={environmentReady}
+            refreshKey={historyKey}
+          />
         </div>
       </div>
     </div>
@@ -852,95 +1049,30 @@ export default function OperationPage() {
         onImport={handleCurlImport}
       />
     ) : null}
+    {duplicateModal ? (
+      <DuplicateCaseModal
+        sourceTestName={duplicateModal.sourceTestName}
+        testName={duplicateModal.testName}
+        onTestNameChange={(testName) => setDuplicateModal((current) => ({ ...current, testName }))}
+        targetEnvironmentId={duplicateModal.targetEnvironmentId}
+        onTargetEnvironmentChange={(targetEnvironmentId) => (
+          setDuplicateModal((current) => ({ ...current, targetEnvironmentId }))
+        )}
+        environments={environments}
+        currentEnvironmentId={runEnvironment?.id}
+        openCopy={duplicateModal.openCopy}
+        onOpenCopyChange={(openCopy) => setDuplicateModal((current) => ({ ...current, openCopy }))}
+        saving={duplicateSaving}
+        onConfirm={confirmDuplicate}
+        onClose={() => {
+          if (!duplicateSaving) {
+            setDuplicateModal(null);
+          }
+        }}
+      />
+    ) : null}
     </PlanExtractsProvider>
   );
-}
-
-function caseSaveBlockers(form, operation, requestBody) {
-  const reasons = [];
-  if (!String(form.testName || "").trim()) {
-    reasons.push("Enter a test name");
-  }
-  if (!String(form.baseUrl || "").trim()) {
-    reasons.push("Set a base URL");
-  }
-  if (!String(form.statusCode ?? "").trim()) {
-    reasons.push("Set an expected status");
-  }
-  const missingParams = missingRequiredParams(form, operation);
-  Object.entries(missingParams).forEach(([label, names]) => {
-    if (names.length) {
-      reasons.push(`Fill required ${label}: ${formatNameList(names)}`);
-    }
-  });
-  if (operation.requestBody?.jsonSchema) {
-    const body = decodeRequestBody(
-      requestBody,
-      operation.requestBody.jsonSchema,
-      form.contentType
-    );
-    const missingBody = missingRequiredSchemaFields(operation.requestBody.jsonSchema, body);
-    if (missingBody.length) {
-      reasons.push(`Fill required body fields: ${formatNameList(missingBody)}`);
-    } else if (operation.requestBody.required && isEffectivelyEmpty(body)) {
-      reasons.push("Fill the required request body");
-    }
-  } else if (operation.requestBody?.required && isEffectivelyEmpty(requestBody)) {
-    reasons.push("Fill the required request body");
-  }
-  return reasons;
-}
-
-function missingRequiredParams(form, operation) {
-  const groups = {
-    "path params": { values: form.pathParams, items: [] },
-    "query params": { values: form.queryParams, items: [] },
-    "headers": { values: form.headers, items: [] },
-    "cookies": { values: form.cookieParams, items: [] }
-  };
-  (operation.parameters || []).forEach((parameter) => {
-    const required = parameter.required || parameter.in === "path";
-    if (!required) {
-      return;
-    }
-    const key = parameter.in === "path"
-      ? "path params"
-      : parameter.in === "query"
-        ? "query params"
-        : parameter.in === "header"
-          ? "headers"
-          : parameter.in === "cookie"
-            ? "cookies"
-            : null;
-    if (!key) {
-      return;
-    }
-    if (!String(groups[key].values?.[parameter.name] || "").trim()) {
-      groups[key].items.push(parameter.name);
-    }
-  });
-  return Object.fromEntries(Object.entries(groups).map(([label, group]) => [label, group.items]));
-}
-
-function formatNameList(names) {
-  const shown = names.slice(0, 8);
-  const extra = names.length - shown.length;
-  return extra > 0 ? `${shown.join(", ")}, and ${extra} more` : shown.join(", ");
-}
-
-function draftRunBlockers(form, operation) {
-  const reasons = [];
-  if (!String(form.baseUrl || "").trim()) {
-    reasons.push("Set a base URL before trying the request");
-  }
-  const missingPath = (operation.parameters || [])
-    .filter((parameter) => parameter.in === "path")
-    .filter((parameter) => !String(form.pathParams?.[parameter.name] || "").trim())
-    .map((parameter) => parameter.name);
-  if (missingPath.length) {
-    reasons.push(`Fill required path params: ${missingPath.join(", ")}`);
-  }
-  return reasons;
 }
 
 function snapshot(form, requestBody) {
@@ -970,12 +1102,47 @@ function blankNa(value) {
   return String(value).trim().toUpperCase() === "NA" ? "" : value;
 }
 
+function defaultDuplicateName(testName) {
+  const base = String(testName || "Untitled").trim() || "Untitled";
+  if (/^copy of /i.test(base)) {
+    return `${base} (2)`;
+  }
+  return `Copy of ${base}`;
+}
+
+function caseUpdateFromView(item, patch, environmentId) {
+  return {
+    specId: item.specId,
+    planId: item.planId,
+    operationKey: item.operationKey,
+    testName: item.testName,
+    pathParams: item.pathParams,
+    queryParams: item.queryParams,
+    headers: item.headers,
+    cookieParams: item.cookieParams,
+    requestBody: item.requestBody,
+    statusCode: item.statusCode,
+    responseType: item.responseType,
+    expectedResponse: item.expectedResponse,
+    enabled: item.enabled,
+    testGroup: item.testGroup,
+    jsonPathAssertions: item.jsonPathAssertions,
+    extracts: item.extracts,
+    maxResponseTimeMs: item.maxResponseTimeMs,
+    contentType: item.contentType,
+    baseUrl: item.baseUrl,
+    environmentId,
+    ...patch
+  };
+}
+
 function blankOperationCase(operation, spec) {
   const form = formFromOperation(operation, spec);
   form.contentType = matchedContentType(form.contentType, operation.requestContentTypes) || form.contentType;
+  const bodySchema = manualRequestBodySchema(operation, spec?.manual);
   const requestBody = decodeRequestBody(
-    emptyFromSchema(operation.requestBody?.jsonSchema) ?? {},
-    operation.requestBody?.jsonSchema,
+    templateFromSchema(bodySchema) ?? {},
+    bodySchema,
     form.contentType
   );
   return { form, requestBody };
@@ -1034,9 +1201,9 @@ function mapParams(parameters, location) {
   return result;
 }
 
-function Field({ label, value, onChange, type = "text", hint, required }) {
+function Field({ id, label, value, onChange, type = "text", hint, required, invalid = false }) {
   return (
-    <div className="field">
+    <div className={`field${invalid ? " field-missing" : ""}`} id={id}>
       <label>
         {label}
         {required ? <span className="req">*</span> : null}
@@ -1077,6 +1244,129 @@ const MANAGED_HEADERS = new Set([
   "content-type", "content-length", "host", "connection", "accept-encoding",
   "content-encoding", "transfer-encoding"
 ]);
+
+function QueryParamGroup({ specParameters, values, onChange, missingKeys = new Set() }) {
+  const specParams = withImportedParams(specParameters, values, "query");
+  const specNames = new Set(specParams.map((item) => item.name));
+  const extras = Object.entries(values || {}).filter(([name]) => name && !specNames.has(name));
+  const [draftName, setDraftName] = useState("");
+  const [draftValue, setDraftValue] = useState("");
+  const [hint, setHint] = useState("");
+
+  function setQuery(name, value) {
+    onChange({ ...(values || {}), [name]: value });
+  }
+
+  function renameExtra(oldName, nextName) {
+    const trimmed = String(nextName || "").trim();
+    if (!trimmed || trimmed === oldName) {
+      return Boolean(trimmed);
+    }
+    const clash = Object.keys(values || {}).some(
+      (key) => key !== oldName && key.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (clash || specNames.has(trimmed)) {
+      setHint(`Query parameter ${trimmed} is already listed.`);
+      return false;
+    }
+    const next = { ...(values || {}) };
+    next[trimmed] = next[oldName] ?? "";
+    delete next[oldName];
+    setHint("");
+    onChange(next);
+    return true;
+  }
+
+  function removeExtra(name) {
+    const next = { ...(values || {}) };
+    delete next[name];
+    onChange(next);
+  }
+
+  function addExtra() {
+    const name = draftName.trim();
+    if (!name) {
+      setHint("Enter a query parameter name.");
+      return;
+    }
+    const existing = Object.keys(values || {}).find((key) => key.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setQuery(existing, draftValue);
+    } else {
+      setQuery(name, draftValue);
+    }
+    setDraftName("");
+    setDraftValue("");
+    setHint("");
+  }
+
+  return (
+    <>
+      <p className="hint" style={{ marginTop: 0 }}>
+        Parameters from the API definition are listed first. Add extra query parameters for this case anytime.
+      </p>
+      {specParams.map((parameter) => (
+        isArrayParam(parameter) ? (
+          <ArrayParamField
+            key={parameter.name}
+            parameter={parameter}
+            values={values}
+            missingKeys={missingKeys}
+            onChange={onChange}
+          />
+        ) : (
+          <div
+            className={`field${missingKeys.has(`${parameter.in}:${parameter.name}`) ? " field-missing" : ""}`}
+            key={parameter.name}
+            id={paramAnchorId(parameter)}
+          >
+            <label>
+              {parameter.name}{parameter.required ? " *" : ""}
+              {parameter.description ? <span className="hint">{parameter.description}</span> : null}
+            </label>
+            <ExtractValueField
+              value={values?.[parameter.name] || ""}
+              placeholder={typeWatermark(parameter.schema)}
+              onChange={(next) => setQuery(parameter.name, next)}
+            />
+          </div>
+        )
+      ))}
+      {extras.map(([name, value]) => (
+        <ExtraHeaderRow
+          key={name}
+          name={name}
+          value={value}
+          onRename={renameExtra}
+          onValueChange={setQuery}
+          onRemove={removeExtra}
+        />
+      ))}
+      <div className="header-add">
+        <input
+          value={draftName}
+          placeholder="Query name, e.g. page"
+          aria-label="New query parameter name"
+          onChange={(event) => setDraftName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addExtra();
+            }
+          }}
+        />
+        <ExtractValueField
+          value={draftValue}
+          placeholder="Value"
+          ariaLabel="New query parameter value"
+          onChange={setDraftValue}
+        />
+        <button type="button" className="btn" onClick={addExtra}>Add query</button>
+      </div>
+      {hint ? <p className="hint">{hint}</p> : null}
+    </>
+  );
+}
 
 function HeaderParamGroup({ specParameters, values, onChange }) {
   const specParams = specParameters || [];
@@ -1143,8 +1433,7 @@ function HeaderParamGroup({ specParameters, values, onChange }) {
 
   return (
     <>
-      <div className="tag-label" style={{ color: "#696969" }}>Headers</div>
-      <p className="hint">
+      <p className="hint" style={{ marginTop: 0 }}>
         Spec headers are listed first. Add extra headers for this case even if they are not in the spec.
         Authorization is set on the environment.
       </p>
@@ -1157,7 +1446,7 @@ function HeaderParamGroup({ specParameters, values, onChange }) {
             onChange={onChange}
           />
         ) : (
-          <div className="field" key={parameter.name}>
+          <div className="field" key={parameter.name} id={paramAnchorId(parameter)}>
             <label>
               {parameter.name}{parameter.required ? " *" : ""}
               {parameter.description ? <span className="hint">{parameter.description}</span> : null}
@@ -1246,21 +1535,37 @@ function ExtraHeaderRow({ name, value, onRename, onValueChange, onRemove }) {
   );
 }
 
-function ParamGroup({ label, parameters, values, onChange }) {
-  if (!parameters.length) return null;
+function ParamGroup({ label, parameters, values, onChange, missingKeys = new Set(), embedded = false }) {
+  if (!parameters.length) {
+    if (embedded) {
+      return (
+        <p className="hint" style={{ marginTop: 0 }}>
+          No {label.toLowerCase()} parameters for this API.
+        </p>
+      );
+    }
+    return null;
+  }
   return (
     <>
-      <div className="tag-label" style={{ color: "#696969" }}>{label}</div>
+      {embedded ? null : (
+        <div className="tag-label" style={{ color: "#696969" }}>{label}</div>
+      )}
       {parameters.map((parameter) => (
         isArrayParam(parameter) ? (
           <ArrayParamField
             key={parameter.name}
             parameter={parameter}
             values={values}
+            missingKeys={missingKeys}
             onChange={onChange}
           />
         ) : (
-          <div className="field" key={parameter.name}>
+          <div
+            className={`field${missingKeys.has(`${parameter.in}:${parameter.name}`) ? " field-missing" : ""}`}
+            key={parameter.name}
+            id={paramAnchorId(parameter)}
+          >
             <label>
               {parameter.name}{parameter.required || parameter.in === "path" ? " *" : ""}
               {parameter.description ? <span className="hint">{parameter.description}</span> : null}
@@ -1277,10 +1582,11 @@ function ParamGroup({ label, parameters, values, onChange }) {
   );
 }
 
-function ArrayParamField({ parameter, values, onChange }) {
+function ArrayParamField({ parameter, values, onChange, missingKeys = new Set() }) {
   const items = parseListValue(values[parameter.name]);
+  const missing = missingKeys.has(`${parameter.in}:${parameter.name}`);
   return (
-    <div className="field">
+    <div className={`field${missing ? " field-missing" : ""}`} id={paramAnchorId(parameter)}>
       <label>
         {parameter.name}{parameter.required || parameter.in === "path" ? " *" : ""}
         <span className="hint">{parameter.description || "Array — repeated query/header values"}</span>

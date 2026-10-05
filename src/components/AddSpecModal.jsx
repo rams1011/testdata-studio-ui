@@ -190,7 +190,7 @@ export default function AddSpecModal({
         </div>
         {source === "rest" ? (
           <p className="hint" style={{ marginTop: 0 }}>
-            Creates an empty catalog. Add GET/POST paths in Studio, then save test cases. No OpenAPI file required.
+            Creates an empty REST catalog only. On the home page, use <strong>Start without OpenAPI</strong> to add your first API and open the case editor in one step.
           </p>
         ) : null}
         {source === "url" ? (

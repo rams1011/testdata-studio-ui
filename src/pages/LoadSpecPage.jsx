@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import GuideLink from "../components/GuideLink";
+import { IconButton, RefreshIcon, SpinnerIcon, TrashIcon } from "../components/RunIconButton";
 import { API_DISPLAY, Api } from "../api";
 import { canManageMembers, clearSession, isAuthEnabled, isBillingEnabled, isWorkspaceReady, saveSession, subscriptionBanner } from "../session";
 import AccountMenu from "../components/AccountMenu";
 import AddSpecModal from "../components/AddSpecModal";
+import StartWithoutOpenApiModal from "../components/StartWithoutOpenApiModal";
 import { useToast } from "../components/Toast";
-import { groupSpecs, touchRecentSpec } from "../specCatalog";
+import { groupSpecs, partitionSpecs, touchRecentSpec } from "../specCatalog";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
 import { resolveWriteConflict } from "../conflict";
 import { importCollectionToast } from "./ExportPage";
@@ -16,6 +19,7 @@ export default function LoadSpecPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [addSpecSource, setAddSpecSource] = useState(null);
+  const [startWithoutOpenApiOpen, setStartWithoutOpenApiOpen] = useState(false);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
@@ -93,6 +97,7 @@ export default function LoadSpecPage() {
     const haystack = `${spec.name || ""} ${spec.title || ""} ${spec.label || ""} ${spec.baseUrl || ""}`.toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
   });
+  const hasRestCatalogs = partitionSpecs(backend.specs || []).rest.length > 0;
 
   function onSpecCreated(spec, meta) {
     touchRecentSpec(spec.specId);
@@ -102,6 +107,12 @@ export default function LoadSpecPage() {
     } else {
       navigate(`/s/${spec.specId}/cases`);
     }
+  }
+
+  function onRestCatalogStarted(spec, operation) {
+    touchRecentSpec(spec.specId);
+    refreshSpecs();
+    navigate(`/s/${spec.specId}/op/${encodeURIComponent(operation.key)}`);
   }
 
   async function importCollection(file) {
@@ -262,14 +273,17 @@ export default function LoadSpecPage() {
     <div className="hero">
       <div className="hero-head">
         <h1>Test Data Studio</h1>
-        {signedIn ? (
+        <div className="hero-head-actions">
+          <GuideLink />
+          {signedIn ? (
           <AccountMenu
             account={backend.session?.account}
             canManage={showAdmin}
             canManageSubscriptions={showSubscriptions}
             onSignOut={signOut}
           />
-        ) : null}
+          ) : null}
+        </div>
       </div>
       <p>
         Open an API spec or add REST APIs without Swagger, build test cases, import a collection,
@@ -331,7 +345,7 @@ export default function LoadSpecPage() {
       {saasLocked ? null : (
       <div className="card home-specs">
         <div className="card-head">
-          <h3>Your specs</h3>
+          <h3>Your APIs</h3>
           <div className="card-head-actions">
             {backend.specs.length ? (
               <input
@@ -354,9 +368,9 @@ export default function LoadSpecPage() {
               type="button"
               className="btn"
               disabled={workspacePending || apiDown || backend.status === "checking"}
-              onClick={() => setAddSpecSource("rest")}
+              onClick={() => setStartWithoutOpenApiOpen(true)}
             >
-              Add REST APIs
+              Start without OpenAPI
             </button>
             <button
               type="button"
@@ -374,67 +388,23 @@ export default function LoadSpecPage() {
               "Looking for saved specs…"
             ) : (
               <>
-                Nothing loaded yet. Use Add spec for OpenAPI, or Add REST APIs if you do not have Swagger.
+                Nothing loaded yet. Use Start without OpenAPI, paste curl in Studio, or Add spec for OpenAPI.
               </>
             )}
           </div>
         ) : !specs.length ? (
-          <div className="empty">No specs match “{query}”.</div>
+          <div className="empty">No APIs match “{query}”.</div>
         ) : (
-          <div className="spec-list">
-            {groupSpecs(specs).map(([group, items]) => (
-              <details key={group} className="spec-group" open>
-                <summary>
-                  <span className="spec-group-title">{group}</span>
-                  <span className="hint">{items.length} spec{items.length === 1 ? "" : "s"}</span>
-                </summary>
-                <div className="spec-group-body">
-                  {items.map((spec) => (
-                    <div key={spec.specId} className="spec-row">
-                      <button
-                        type="button"
-                        className="spec-open"
-                        onClick={() => {
-                          touchRecentSpec(spec.specId);
-                          navigate(`/s/${spec.specId}/cases`);
-                        }}
-                      >
-                        <div className="spec-open-title">{spec.name || spec.title}</div>
-                        {spec.title && spec.title !== spec.name ? (
-                          <div className="hint">{spec.title}</div>
-                        ) : null}
-                        <div className="hint">
-                          {spec.manual ? "REST catalog" : `${spec.operationCount} operations`}
-                          {spec.manual && spec.operationCount
-                            ? ` · ${spec.operationCount} API${spec.operationCount === 1 ? "" : "s"}`
-                            : ""}
-                          {spec.baseUrl ? ` · ${spec.baseUrl}` : ""}
-                        </div>
-                      </button>
-                      {spec.manual ? null : (
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={workspacePending || !!reloadingId || !!deletingId}
-                        onClick={(event) => startReload(spec, event)}
-                      >
-                        {reloadingId === spec.specId ? "Updating…" : "Update spec"}
-                      </button>
-                      )}
-                      <button
-                        type="button"
-                        className="btn danger"
-                        disabled={workspacePending || !!reloadingId || !!deletingId}
-                        onClick={(event) => deleteSpec(spec, event)}
-                      >
-                        {deletingId === spec.specId ? "Deleting…" : "Delete"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            ))}
-          </div>
+          <HomeSpecLibrary
+            specs={specs}
+            showRestTab={hasRestCatalogs}
+            navigate={navigate}
+            workspacePending={workspacePending}
+            reloadingId={reloadingId}
+            deletingId={deletingId}
+            onReload={startReload}
+            onDelete={deleteSpec}
+          />
         )}
         <input
           ref={importFileRef}
@@ -530,6 +500,15 @@ export default function LoadSpecPage() {
         </div>
       ) : null}
 
+      {startWithoutOpenApiOpen && !saasLocked ? (
+        <StartWithoutOpenApiModal
+          open={startWithoutOpenApiOpen}
+          apiDown={apiDown}
+          onClose={() => setStartWithoutOpenApiOpen(false)}
+          onCreated={onRestCatalogStarted}
+          onCreateEmptyCatalog={() => setAddSpecSource("rest")}
+        />
+      ) : null}
       {addSpecSource && !saasLocked ? (
         <AddSpecModal
           open={!!addSpecSource}
@@ -545,6 +524,194 @@ export default function LoadSpecPage() {
 }
 
 const NEW_WORKSPACE_VALUE = "__new_workspace__";
+
+function HomeSpecLibrary({
+  specs,
+  showRestTab,
+  navigate,
+  workspacePending,
+  reloadingId,
+  deletingId,
+  onReload,
+  onDelete
+}) {
+  const { openApi, rest } = partitionSpecs(specs);
+  const [libraryTab, setLibraryTab] = useState("openapi");
+
+  useEffect(() => {
+    if (!showRestTab) {
+      if (libraryTab !== "openapi") setLibraryTab("openapi");
+      return;
+    }
+    if (libraryTab === "openapi" && !openApi.length && rest.length) {
+      setLibraryTab("rest");
+    } else if (libraryTab === "rest" && !rest.length && openApi.length) {
+      setLibraryTab("openapi");
+    }
+  }, [openApi.length, rest.length, libraryTab, showRestTab]);
+
+  return (
+    <div className="spec-library">
+      <div
+        className="body-editor-tabs spec-library-tabs"
+        role="tablist"
+        aria-label={showRestTab ? "OpenAPI specs and REST catalogs" : "OpenAPI specs"}
+      >
+        <button
+          type="button"
+          role="tab"
+          id="home-library-tab-openapi"
+          aria-selected={libraryTab === "openapi"}
+          aria-controls="home-library-panel-openapi"
+          className={libraryTab === "openapi" ? "active" : ""}
+          onClick={() => setLibraryTab("openapi")}
+        >
+          OpenAPI specs{openApi.length ? ` (${openApi.length})` : ""}
+        </button>
+        {showRestTab ? (
+          <button
+            type="button"
+            role="tab"
+            id="home-library-tab-rest"
+            aria-selected={libraryTab === "rest"}
+            aria-controls="home-library-panel-rest"
+            className={libraryTab === "rest" ? "active" : ""}
+            onClick={() => setLibraryTab("rest")}
+          >
+            REST catalogs{rest.length ? ` (${rest.length})` : ""}
+          </button>
+        ) : null}
+      </div>
+      <div
+        id="home-library-panel-openapi"
+        role="tabpanel"
+        aria-labelledby="home-library-tab-openapi"
+        className="spec-library-panel"
+        hidden={libraryTab !== "openapi"}
+      >
+        <p className="hint spec-type-lead">
+          Imported from Swagger or OpenAPI. Reload from file to pick up schema changes.
+        </p>
+        {openApi.length ? (
+          <SpecLabelGroups
+            specs={openApi}
+            countNoun="spec"
+            navigate={navigate}
+            workspacePending={workspacePending}
+            reloadingId={reloadingId}
+            deletingId={deletingId}
+            onReload={onReload}
+            onDelete={onDelete}
+          />
+        ) : (
+          <div className="empty">No OpenAPI specs{specs.length ? " match your search" : ""}.</div>
+        )}
+      </div>
+      {showRestTab ? (
+        <div
+          id="home-library-panel-rest"
+          role="tabpanel"
+          aria-labelledby="home-library-tab-rest"
+          className="spec-library-panel"
+          hidden={libraryTab !== "rest"}
+        >
+          <p className="hint spec-type-lead">
+            APIs added by method and path without a spec file.
+          </p>
+          {rest.length ? (
+            <SpecLabelGroups
+              specs={rest}
+              countNoun="catalog"
+              navigate={navigate}
+              workspacePending={workspacePending}
+              reloadingId={reloadingId}
+              deletingId={deletingId}
+              onReload={onReload}
+              onDelete={onDelete}
+              hideReload
+            />
+          ) : (
+            <div className="empty">No REST catalogs{specs.length ? " match your search" : ""}.</div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SpecLabelGroups({
+  specs,
+  countNoun,
+  navigate,
+  workspacePending,
+  reloadingId,
+  deletingId,
+  onReload,
+  onDelete,
+  hideReload = false
+}) {
+  return (
+    <div className="spec-list">
+      {groupSpecs(specs).map(([group, items]) => (
+        <details key={group} className="spec-group" open>
+          <summary>
+            <span className="spec-group-title">{group}</span>
+            <span className="hint">
+              {items.length} {countNoun}{items.length === 1 ? "" : "s"}
+            </span>
+          </summary>
+          <div className="spec-group-body">
+            {items.map((spec) => (
+              <div key={spec.specId} className="spec-row">
+                <button
+                  type="button"
+                  className="spec-open"
+                  onClick={() => {
+                    touchRecentSpec(spec.specId);
+                    navigate(`/s/${spec.specId}/cases`);
+                  }}
+                >
+                  <div className="spec-open-title">{spec.name || spec.title}</div>
+                  {spec.title && spec.title !== spec.name ? (
+                    <div className="hint">{spec.title}</div>
+                  ) : null}
+                  <div className="hint">
+                    {spec.manual ? "REST catalog" : `${spec.operationCount} operations`}
+                    {spec.manual && spec.operationCount
+                      ? ` · ${spec.operationCount} API${spec.operationCount === 1 ? "" : "s"}`
+                      : ""}
+                    {spec.baseUrl ? ` · ${spec.baseUrl}` : ""}
+                  </div>
+                </button>
+                <div className="spec-row-actions">
+                  {hideReload || spec.manual ? null : (
+                    <IconButton
+                      label={`Update spec ${spec.name || spec.title} from OpenAPI file`}
+                      title={reloadingId === spec.specId ? "Updating…" : "Update spec"}
+                      disabled={workspacePending || !!reloadingId || !!deletingId}
+                      onClick={(event) => onReload(spec, event)}
+                    >
+                      {reloadingId === spec.specId ? <SpinnerIcon /> : <RefreshIcon />}
+                    </IconButton>
+                  )}
+                  <IconButton
+                    label={`Delete ${spec.manual ? "catalog" : "spec"} ${spec.name || spec.title}`}
+                    title={deletingId === spec.specId ? "Deleting…" : "Delete"}
+                    disabled={workspacePending || !!reloadingId || !!deletingId}
+                    danger
+                    onClick={(event) => onDelete(spec, event)}
+                  >
+                    {deletingId === spec.specId ? <SpinnerIcon /> : <TrashIcon />}
+                  </IconButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
 
 function storageLabel(type) {
   if (type === "h2") return "saved locally";

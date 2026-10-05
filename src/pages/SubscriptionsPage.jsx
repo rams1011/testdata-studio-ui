@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { Api } from "../api";
-import { clearSession, isBillingEnabled, isSaasAdmin, saveSession } from "../session";
+import AccountMenu from "../components/AccountMenu";
+import GuideLink from "../components/GuideLink";
+import HomeLink from "../components/HomeLink";
+import { canManageMembers, clearSession, isBillingEnabled, isSaasAdmin, isWorkspaceReady, saveSession } from "../session";
 import { useToast } from "../components/Toast";
 
 function usage(used, limit) {
@@ -178,9 +181,15 @@ export default function SubscriptionsPage() {
     <div className="hero admin-page">
       <div className="hero-head">
         <h1>{admin ? "Subscriptions" : "Plan"}</h1>
-        <div className="hero-actions">
-          <Link className="btn" to="/">Back to specs</Link>
-          <button type="button" className="btn" onClick={signOut}>Sign out</button>
+        <div className="hero-head-actions">
+          <HomeLink />
+          <GuideLink />
+          <AccountMenu
+            account={session?.account}
+            canManage={isWorkspaceReady(session) && canManageMembers(session)}
+            canManageSubscriptions={isBillingEnabled(session)}
+            onSignOut={signOut}
+          />
         </div>
       </div>
       <p>

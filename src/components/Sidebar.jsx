@@ -6,7 +6,8 @@ export default function Sidebar({
   operations,
   caseCounts = {},
   search,
-  onSearch
+  onSearch,
+  quickAdd
 }) {
   const { specId } = useParams();
   const location = useLocation();
@@ -99,6 +100,7 @@ export default function Sidebar({
             ) : null}
           </div>
         </div>
+        {spec?.manual && quickAdd ? quickAdd : null}
       </div>
       <nav className="nav" ref={navRef}>
         {search && !filteredCount ? (
@@ -106,7 +108,7 @@ export default function Sidebar({
         ) : null}
         {!search && !operations.length ? (
           <div className="empty" style={{ padding: "12px 10px", color: "#b0b0b0" }}>
-            {spec?.manual ? "No APIs yet. Add a method and path, then save test cases." : "No operations in this spec."}
+            {spec?.manual ? "No APIs yet — use the bar above or Import from curl." : "No operations in this spec."}
           </div>
         ) : null}
         {showTags

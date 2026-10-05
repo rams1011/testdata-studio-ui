@@ -82,6 +82,16 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange, expe
     emit(rows.map((row) => ({ ...row, selected })));
   }
 
+  function clearSelections() {
+    if (!hasJsonPathAssertionContent(value, selectedCount)) {
+      return;
+    }
+    if (!window.confirm("Clear all JSONPath assertions? No response fields will be asserted until you select paths again.")) {
+      return;
+    }
+    setAll(false);
+  }
+
   function addCustom() {
     const path = customPath.trim();
     if (!path || path === "$" || path === "$.") {
@@ -123,6 +133,7 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange, expe
   }
 
   const selectedCount = rows.filter((row) => row.selected).length;
+  const canClear = hasJsonPathAssertionContent(value, selectedCount);
 
   return (
     <div className="field jsonpath-picker">
@@ -142,41 +153,92 @@ export default function JsonPathAssertionsPicker({ schema, value, onChange, expe
         />
         <div className="inline-actions">
           <button type="button" className="btn" onClick={() => setAll(true)}>Select all</button>
-          <button type="button" className="btn" onClick={() => setAll(false)}>Clear</button>
+          <button type="button" className="btn" onClick={clearSelections} disabled={!canClear}>Clear</button>
         </div>
       </div>
       <div className="jsonpath-list">
         {visible.map((row) => (
-          <label className={`jsonpath-row ${row.selected ? "selected" : ""}`} key={row.path}>
-            <input
-              type="checkbox"
-              checked={row.selected}
-              onChange={(event) => updateRow(row.path, { selected: event.target.checked })}
-            />
-            <span className="jsonpath-meta">
-              <code>{row.path}</code>
-              <span className="hint">
-                {row.type}{row.required ? " · required" : ""}{row.description ? ` · ${row.description}` : ""}
-              </span>
-            </span>
-            <input
-              placeholder={row.type || "Value to assert"}
-              value={row.value}
-              disabled={!row.selected || row.derived}
-              onChange={(event) => updateRow(row.path, { selected: true, value: event.target.value })}
-            />
-            {row.custom ? (
-              <button type="button" className="btn danger" onClick={() => removeCustom(row.path)}>
-                Remove
-              </button>
-            ) : null}
-          </label>
+          <JsonPathAssertionRow
+            key={row.path}
+            row={row}
+            onToggle={(selected) => updateRow(row.path, { selected })}
+            onValueChange={(value) => updateRow(row.path, { selected: true, value })}
+            onRemove={row.custom ? () => removeCustom(row.path) : null}
+          />
         ))}
       </div>
       <CustomPathRow
         customPath={customPath}
         setCustomPath={setCustomPath}
         onAdd={addCustom}
+      />
+    </div>
+  );
+}
+
+function hasJsonPathAssertionContent(serialized, selectedCount) {
+  if (selectedCount > 0) {
+    return true;
+  }
+  if (serialized == null) {
+    return false;
+  }
+  const text = String(serialized).trim();
+  if (!text || text.toUpperCase() === "NA") {
+    return false;
+  }
+  return parseJsonPathAssertions(serialized).size > 0;
+}
+
+function jsonPathRowTitle(row) {
+  const parts = [row.path];
+  if (row.type) {
+    parts.push(row.type + (row.required ? " (required)" : ""));
+  }
+  if (row.description) {
+    parts.push(row.description);
+  }
+  return parts.join("\n");
+}
+
+function JsonPathAssertionRow({ row, onToggle, onValueChange, onRemove }) {
+  const valuePlaceholder = row.derived
+    ? "From expected response"
+    : (row.type ? `Expected ${row.type}` : "Value to assert");
+
+  return (
+    <div className={`jsonpath-row jsonpath-assertion-row ${row.selected ? "selected" : ""}`}>
+      <div className="jsonpath-assertion-head">
+        <label className="jsonpath-assertion-path">
+          <input
+            type="checkbox"
+            checked={row.selected}
+            onChange={(event) => onToggle(event.target.checked)}
+          />
+          <code title={jsonPathRowTitle(row)}>
+            {row.path}
+            {row.required ? <span className="jsonpath-required" aria-hidden="true"> *</span> : null}
+          </code>
+          {row.type && row.type !== "custom" ? (
+            <span className="jsonpath-type-pill">{row.type}</span>
+          ) : null}
+        </label>
+        {onRemove ? (
+          <button type="button" className="btn danger" onClick={onRemove}>
+            Remove
+          </button>
+        ) : null}
+      </div>
+      {row.description ? (
+        <p className="hint jsonpath-assertion-desc">{row.description}</p>
+      ) : null}
+      <input
+        className="jsonpath-assertion-value"
+        placeholder={valuePlaceholder}
+        value={row.value}
+        disabled={!row.selected || row.derived}
+        aria-label={`Expected value for ${row.path}`}
+        onChange={(event) => onValueChange(event.target.value)}
       />
     </div>
   );

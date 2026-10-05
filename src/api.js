@@ -474,10 +474,11 @@ export const Api = {
     });
   },
 
-  listRuns({ specId, planId, caseId, outcome, trigger, limit } = {}) {
+  listRuns({ specId, planId, environmentId, caseId, outcome, trigger, limit } = {}) {
     const query = new URLSearchParams();
     if (specId) query.set("specId", specId);
     if (planId) query.set("planId", planId);
+    if (environmentId) query.set("environmentId", environmentId);
     if (caseId) query.set("caseId", caseId);
     if (outcome) query.set("outcome", outcome);
     if (trigger) query.set("trigger", trigger);

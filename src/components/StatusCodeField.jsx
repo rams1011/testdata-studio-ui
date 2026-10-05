@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { statusLabel } from "../httpStatus";
 
-export default function StatusCodeField({ value, options, onChange }) {
+export default function StatusCodeField({ value, options, onChange, invalid = false }) {
   const [query, setQuery] = useState(statusLabel(value));
   const [open, setOpen] = useState(false);
   const boxRef = useRef(null);
@@ -48,7 +48,7 @@ export default function StatusCodeField({ value, options, onChange }) {
   }
 
   return (
-    <div className="field status-combo" ref={boxRef}>
+    <div className={`field status-combo${invalid ? " field-missing" : ""}`} ref={boxRef}>
       <label>Expected status</label>
       <input
         value={query}

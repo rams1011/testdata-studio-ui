@@ -25,6 +25,8 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173). The home page checks `GET /api/testdata/config` and lists specs from `GET /api/specs`.
 
+In the app, open the **help** icon (? in a circle) at the top right before the account menu; it opens `/guide` in a **new tab** so your spec stays open.
+
 Hosting is one API setting: `TESTDATA_EDITION=local|datacenter|saas` (blank is `datacenter`). `datacenter` requires sign in and shows **Admin**, but hides **Plan**. Accounts are created by an administrator.
 
 | UI action | API |
@@ -56,7 +58,7 @@ Studio seeds a `local` environment from the spec URL the first time you open a s
 
 | Control | What it does |
 |---------|----------------|
-| **Spec** | Current name + layers icon (**Switch spec** tooltip). **Ctrl+K** / **⌘K** opens the search palette. **New spec…** at the bottom |
+| **Spec** | Current name + search icon (**Switch spec** tooltip). **Ctrl+K** / **⌘K** opens the search palette. **New spec…** at the bottom |
 | **Environment** menu | Switches the active host **and** the case list. Choosing `int` **applies** that environment: the spec Base URL becomes the int URL, and saved cases that still used the previous spec URL are rewritten. Cases with a custom URL are left as-is. |
 | **New environment…** | Opens a blank form. Enter a name and base URL, then **Save new**. That creates the environment and switches to it. New cases you save belong to it. |
 | **Manage environment** | Edits the selected environment’s name, base URL, and auth type. **Save** writes the record and keeps that environment’s cases (a rename from `local` to `dev` does not drop them). If that environment is the one currently applied, Save also re-applies the URL. **Auth type** also chooses which credential fields **Run authentication** shows. |

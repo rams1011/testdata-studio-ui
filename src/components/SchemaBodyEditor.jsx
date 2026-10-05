@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import SchemaForm, { SchemaFilePickers } from "./SchemaForm";
-import { collectFileFields, mergeFileRefs, stripFileRefsForEditor } from "../schema";
+import {
+  bodyJsonPlaceholder,
+  collectFileFields,
+  mergeFileRefs,
+  schemaHasFormFields,
+  stripFileRefsForEditor,
+  templateFromSchema
+} from "../schema";
 import { jsonToXml, looksLikeXml, validateXml, xmlToJson } from "../xml";
 
 export default function SchemaBodyEditor({
@@ -20,10 +27,13 @@ export default function SchemaBodyEditor({
   format = "json",
   allowExtracts = false,
   fileUploads = false,
-  environmentId
+  environmentId,
+  defaultTab = "json",
+  storedJson
 }) {
   const xml = format === "xml";
-  const [mode, setMode] = useState(xml ? "xml" : "json");
+  const preferForm = schemaHasFormFields(schema);
+  const [mode, setMode] = useState(() => initialEditorMode(xml, defaultTab, preferForm));
   const [filter, setFilter] = useState("");
   const [jsonText, setJsonText] = useState("");
   const [xmlText, setXmlText] = useState("");
@@ -36,13 +46,13 @@ export default function SchemaBodyEditor({
   );
 
   useEffect(() => {
-    setMode(xml ? "xml" : "json");
+    setMode(initialEditorMode(xml, defaultTab, preferForm));
     setFilter("");
-    setJsonText(pretty(stripFileRefsForEditor(objectValue), emptyToNull));
+    setJsonText(jsonTextFromValue(storedJson, objectValue, emptyToNull));
     setXmlText(xml ? jsonToXml(stripFileRefsForEditor(value ?? objectValue), schema) : "");
     setJsonError("");
     setXmlError("");
-  }, [resetKey, emptyToNull, xml]);
+  }, [resetKey, emptyToNull, xml, preferForm, defaultTab, storedJson]);
 
   useEffect(() => {
     if (xml) {
@@ -59,16 +69,19 @@ export default function SchemaBodyEditor({
     if (mode !== "json" || (jsonError && !(emptyToNull && value == null))) {
       return;
     }
-    const next = pretty(stripFileRefsForEditor(objectValue), emptyToNull);
+    if (shouldKeepLocalJsonText(emptyToNull, storedJson, objectValue, jsonText)) {
+      return;
+    }
+    const next = jsonTextFromValue(storedJson, objectValue, emptyToNull);
     setJsonText((current) => (current === next ? current : next));
-  }, [value, objectValue, schema, mode, jsonError, xmlError, emptyToNull, xml]);
+  }, [value, objectValue, schema, mode, jsonError, xmlError, emptyToNull, xml, storedJson, jsonText]);
 
   function showForm() {
     setMode("form");
   }
 
   function showJson() {
-    setJsonText(pretty(stripFileRefsForEditor(objectValue), emptyToNull));
+    setJsonText(jsonTextFromValue(storedJson, objectValue, emptyToNull));
     setJsonError("");
     setMode("json");
   }
@@ -84,7 +97,7 @@ export default function SchemaBodyEditor({
     const trimmed = text.trim();
     if (!trimmed) {
       setJsonError("");
-      onChange(mergeFileRefs(emptyToNull ? null : {}, objectValue));
+      onChange(mergeFileRefs(emptyJsonValue(schema, emptyToNull), objectValue));
       return;
     }
     try {
@@ -129,14 +142,15 @@ export default function SchemaBodyEditor({
   return (
     <div className="body-editor">
       <div className="body-editor-toolbar">
-        <input
-          type="search"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder="Search fields"
-          aria-label={searchAria}
-          disabled={mode !== "form"}
-        />
+        {mode === "form" ? (
+          <input
+            type="search"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Search fields"
+            aria-label={searchAria}
+          />
+        ) : null}
         <div className="body-editor-tabs" role="tablist" aria-label={tabsAria}>
           <button
             type="button"
@@ -171,7 +185,7 @@ export default function SchemaBodyEditor({
         </div>
         {onFillSample ? (
           <button type="button" className="btn" onClick={fillSample}>
-            Fill sample nested data
+            Fill sample values
           </button>
         ) : null}
         {extraActions}
@@ -186,7 +200,7 @@ export default function SchemaBodyEditor({
             value={xmlText}
             onChange={(event) => editXml(event.target.value)}
             spellCheck={false}
-            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : undefined}
+            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : bodyJsonPlaceholder(schema)}
             aria-invalid={Boolean(xmlError)}
             aria-label={jsonAria}
           />
@@ -199,7 +213,7 @@ export default function SchemaBodyEditor({
             value={jsonText}
             onChange={(event) => editJson(event.target.value)}
             spellCheck={false}
-            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : undefined}
+            placeholder={emptyToNull ? "Optional. Leave blank if you only check status." : "Paste JSON here."}
             aria-invalid={Boolean(jsonError)}
             aria-label={jsonAria}
           />
@@ -243,22 +257,67 @@ function asObject(value, schema, xml, emptyToNull) {
   return {};
 }
 
-function pretty(value, emptyToNull) {
+function initialEditorMode(xml, defaultTab, preferForm) {
+  if (xml) {
+    return "xml";
+  }
+  if (defaultTab === "json") {
+    return "json";
+  }
+  if (defaultTab === "form") {
+    return "form";
+  }
+  return preferForm ? "form" : "json";
+}
+
+function formatJsonText(value, emptyToNull) {
   if (emptyToNull && isBlankJson(value)) {
     return "";
   }
   return JSON.stringify(value ?? {}, null, 2);
 }
 
+function emptyJsonValue(schema, emptyToNull) {
+  if (emptyToNull) {
+    return null;
+  }
+  if (schemaHasFormFields(schema)) {
+    return templateFromSchema(schema);
+  }
+  return {};
+}
+
 function isBlankJson(value) {
   if (value == null) {
     return true;
   }
+  // Empty object means "no optional body"; [] is a valid expected response.
   if (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
     return true;
   }
-  if (Array.isArray(value) && value.length === 0) {
+  return false;
+}
+
+function jsonTextFromValue(storedJson, objectValue, emptyToNull) {
+  if (emptyToNull && storedJson != null) {
+    return storedJson;
+  }
+  return formatJsonText(stripFileRefsForEditor(objectValue), emptyToNull);
+}
+
+function shouldKeepLocalJsonText(emptyToNull, storedJson, objectValue, jsonText) {
+  if (!emptyToNull || !jsonText.trim()) {
+    return false;
+  }
+  if (storedJson != null && storedJson.trim()) {
+    return false;
+  }
+  if (objectValue != null && !isBlankJson(objectValue)) {
+    return false;
+  }
+  try {
+    return !isBlankJson(JSON.parse(jsonText));
+  } catch {
     return true;
   }
-  return false;
 }

@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
 import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
 import ImportCurlModal from "../components/ImportCurlModal";
 import LastRunsStrip from "../components/LastRunsStrip";
 import RunResultPanel, { resultBadge } from "../components/RunResultPanel";
+import RunIconButton from "../components/RunIconButton";
 import { useToast } from "../components/Toast";
+import { formatCaseAuditCell } from "../caseAudit";
 
 export default function CasesPage() {
   const { specId } = useParams();
@@ -61,16 +63,39 @@ export default function CasesPage() {
     [cases]
   );
 
+  const operationByKey = useMemo(() => {
+    const map = {};
+    (operations || []).forEach((operation) => {
+      if (operation?.key) {
+        map[operation.key] = operation;
+      }
+    });
+    return map;
+  }, [operations]);
+
+  const apiLabelForCase = useCallback((item) => {
+    const operation = operationByKey[item.operationKey];
+    if (!operation) {
+      return "";
+    }
+    const label = String(operation.summary || "").trim();
+    if (label) {
+      return label;
+    }
+    return `${operation.method || item.method || ""} ${operation.path || item.endpoint || ""}`.trim();
+  }, [operationByKey]);
+
   const visible = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     return cases.filter((item) => {
       if (methodFilter && item.method !== methodFilter) return false;
       if (statusFilter && String(item.statusCode) !== statusFilter) return false;
       if (!needle) return true;
-      const haystack = `${item.testName} ${item.method} ${item.endpoint} ${item.testGroup} ${item.statusCode}`.toLowerCase();
+      const apiLabel = spec?.manual ? apiLabelForCase(item) : "";
+      const haystack = `${item.testName} ${apiLabel} ${item.method} ${item.endpoint} ${item.testGroup} ${item.statusCode}`.toLowerCase();
       return haystack.includes(needle);
     });
-  }, [cases, filter, methodFilter, statusFilter]);
+  }, [cases, filter, methodFilter, statusFilter, spec?.manual, apiLabelForCase]);
 
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
 
@@ -178,16 +203,16 @@ export default function CasesPage() {
               : cases.length
               ? `${cases.length} case${cases.length === 1 ? "" : "s"} in ${runEnvironment?.name || "this plan"}. Click a row to add, update, or delete.`
               : spec?.manual
-                ? "Add a REST API, or paste curl. Then save a test case."
+                ? "Paste curl or add an API in the sidebar, then save a test case."
                 : "Open an operation on the left and save a case, or import from curl."}
           </p>
         </div>
         <div className="actions">
-          <button type="button" className="btn" onClick={() => setImportOpen(true)}>
-            Import from curl
-          </button>
           {cases.length ? (
             <>
+              <button type="button" className="btn" onClick={() => setImportOpen(true)}>
+                Import from curl
+              </button>
               <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/export`)}>
                 Export
               </button>
@@ -199,7 +224,6 @@ export default function CasesPage() {
         </div>
       </div>
       <AuthSettings auth={auth} onChange={setAuth} environment={runEnvironment} />
-      <LastRunsStrip specId={specId} planId={planId} refreshKey={historyKey} />
       {authCue ? (
         <div className="status-banner down" style={{ marginTop: 16 }}>
           API returned 401. Add run authentication if this endpoint needs login.
@@ -224,18 +248,18 @@ export default function CasesPage() {
           <h3>Get started</h3>
           <p className="empty" style={{ paddingTop: 0 }}>
             {spec?.manual && !operations.length
-              ? "Add a REST API by method and path, then save a test case. Curl also creates the API if it is missing."
+              ? "Paste curl to create the API and fill the case, or use Quick add in the sidebar (method + path)."
               : "Pick an operation in the sidebar, fill in request and expected response, then Save. Or import a saved collection from the home page."}
           </p>
           <div className="actions" style={{ marginTop: 14 }}>
-            {onAddApi ? (
-              <button type="button" className="btn primary" onClick={onAddApi}>
-                Add API
-              </button>
-            ) : null}
-            <button type="button" className={onAddApi ? "btn" : "btn primary"} onClick={() => setImportOpen(true)}>
+            <button type="button" className="btn primary" onClick={() => setImportOpen(true)}>
               Import from curl
             </button>
+            {onAddApi ? (
+              <button type="button" className="btn" onClick={onAddApi}>
+                Add API…
+              </button>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -281,7 +305,10 @@ export default function CasesPage() {
                     }}
                   />
                 </th>
-                {["Name", "Method", "Endpoint", "Group", "Status", "On", "Result", ""].map((text) => <th key={text}>{text}</th>)}
+                {(spec?.manual
+                  ? ["Test name", "API label", "Method", "Endpoint", "Group", "Status", "On", "Updated", "Result", ""]
+                  : ["Name", "Method", "Endpoint", "Group", "Status", "On", "Updated", "Result", ""]
+                ).map((text) => <th key={text}>{text}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -301,26 +328,28 @@ export default function CasesPage() {
                   <td>
                     {item.testName}
                   </td>
+                  {spec?.manual ? (
+                    <td>{apiLabelForCase(item) || "—"}</td>
+                  ) : null}
                   <td>{item.method}</td>
                   <td>{item.endpoint}</td>
                   <td>{item.testGroup}</td>
                   <td>{item.statusCode}</td>
                   <td>{item.enabled === "N" ? "No" : "Yes"}</td>
+                  <td className="case-audit-cell">{formatCaseAuditCell(item)}</td>
                   <td onClick={(event) => {
                     event.stopPropagation();
                     if (runById[item.id]) setSelectedResult(runById[item.id]);
                   }}>
                     {resultBadge(runById[item.id])}
                   </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn"
+                  <td className="cases-run-cell" onClick={(event) => event.stopPropagation()}>
+                    <RunIconButton
+                      testName={item.testName}
+                      running={running === item.id}
                       disabled={!!running}
                       onClick={(event) => runOne(item.id, event)}
-                    >
-                      {running === item.id ? "Running…" : "Run"}
-                    </button>
+                    />
                   </td>
                 </tr>
               ))}
@@ -329,6 +358,13 @@ export default function CasesPage() {
           {!visible.length ? <div className="empty">No cases match this filter.</div> : null}
         </div>
       )}
+      <LastRunsStrip
+        specId={specId}
+        planId={planId}
+        environmentId={runEnvironment?.id}
+        environmentReady={environmentReady}
+        refreshKey={historyKey}
+      />
       {importOpen ? (
         <ImportCurlModal
           operations={operations}

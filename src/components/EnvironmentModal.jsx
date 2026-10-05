@@ -57,7 +57,7 @@ export default function EnvironmentModal({
             id="environment-modal-name"
             ref={nameRef}
             value={form.name}
-            placeholder="local, int, prod"
+            placeholder="Default, int, prod"
             disabled={saving}
             onChange={(event) => patch({ name: event.target.value })}
             onKeyDown={(event) => {

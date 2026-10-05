@@ -9,9 +9,11 @@ import OperationPage from "./pages/OperationPage";
 import CasesPage from "./pages/CasesPage";
 import ExportPage from "./pages/ExportPage";
 import HistoryPage from "./pages/HistoryPage";
+import GuidePage from "./pages/GuidePage";
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
+  { path: "/guide", element: <GuidePage /> },
   {
     element: <RequireAuth />,
     children: [
