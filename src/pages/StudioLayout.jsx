@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Api } from "../api";
 import { canManageMembers, isBillingEnabled, isWorkspaceReady, clearSession } from "../session";
@@ -8,6 +8,7 @@ import AddApiModal from "../components/AddApiModal";
 import SidebarQuickAdd from "../components/SidebarQuickAdd";
 import { useToast } from "../components/Toast";
 import { operationRequestFromCurl } from "../curlImport";
+import { resolveWriteConflict } from "../conflict";
 
 function planStorageKey(specId) {
   return `testdata.plan.${specId}`;
@@ -31,6 +32,71 @@ export default function StudioLayout() {
   const [environmentSpecId, setEnvironmentSpecId] = useState(specId);
   const [session, setSession] = useState(null);
   const [addApiOpen, setAddApiOpen] = useState(false);
+  const specRevisionRef = useRef(null);
+
+  useEffect(() => {
+    specRevisionRef.current = spec?.updatedAt ?? null;
+  }, [spec?.updatedAt]);
+
+  const redirectIfMissingOperation = useCallback((nextOperations) => {
+    const match = location.pathname.match(/\/op\/([^/]+)/);
+    if (!match) {
+      return;
+    }
+    const key = decodeURIComponent(match[1]);
+    if (!(nextOperations || []).some((operation) => operation.key === key)) {
+      navigate(`/s/${specId}/cases`, { replace: true });
+    }
+  }, [location.pathname, navigate, specId]);
+
+  const syncSpecCatalogFromServer = useCallback(async (specHint, { notify = false } = {}) => {
+    const [nextSpec, nextOperations] = await Promise.all([
+      specHint ? Promise.resolve(specHint) : Api.getSpec(specId),
+      Api.listOperations(specId)
+    ]);
+    setSpec(nextSpec);
+    setOperations(nextOperations);
+    specRevisionRef.current = nextSpec?.updatedAt ?? null;
+    redirectIfMissingOperation(nextOperations);
+    if (planId && environmentReady) {
+      try {
+        const nextCases = await Api.listCases(specId, undefined, planId, runEnvironment?.id);
+        setCases(nextCases || []);
+      } catch {
+        setCases([]);
+      }
+    }
+    if (notify) {
+      toast("Spec was updated — refreshed operations");
+    }
+    return { spec: nextSpec, operations: nextOperations };
+  }, [specId, planId, environmentReady, runEnvironment?.id, toast, redirectIfMissingOperation]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!specId || !spec?.updatedAt) {
+      return undefined;
+    }
+    async function poll() {
+      try {
+        const remote = await Api.getSpec(specId);
+        if (cancelled || !remote?.updatedAt) {
+          return;
+        }
+        if (remote.updatedAt !== specRevisionRef.current) {
+          await syncSpecCatalogFromServer(remote, { notify: true });
+        }
+      } catch {
+        // Ignore transient poll errors.
+      }
+    }
+    poll();
+    const timer = setInterval(poll, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [specId, spec?.updatedAt, syncSpecCatalogFromServer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,12 +217,7 @@ export default function StudioLayout() {
   }
 
   async function reloadOperations() {
-    const [nextSpec, nextOperations] = await Promise.all([
-      Api.getSpec(specId),
-      Api.listOperations(specId)
-    ]);
-    setSpec(nextSpec);
-    setOperations(nextOperations);
+    const { operations: nextOperations } = await syncSpecCatalogFromServer(null);
     return nextOperations;
   }
 
@@ -197,33 +258,39 @@ export default function StudioLayout() {
   }
 
   async function handleSpecUpdated(updated) {
-    setSpec(updated);
-    try {
-      await reloadCases();
-    } catch {
-      // Case list refresh is best-effort after a spec rename or base URL change.
-    }
+    await syncSpecCatalogFromServer(updated);
   }
 
-  async function reloadSpec(file) {
-    const result = file
-      ? await Api.reloadSpecUpload(specId, file, spec?.baseUrl)
-      : await Api.reloadSpec(specId, spec?.baseUrl ? { baseUrl: spec.baseUrl } : {});
-    const [nextSpec, nextOperations] = await Promise.all([
-      Api.getSpec(specId),
-      Api.listOperations(specId)
-    ]);
-    setSpec(nextSpec);
-    setOperations(nextOperations);
-    const match = location.pathname.match(/\/op\/([^/]+)/);
-    if (match) {
-      const key = decodeURIComponent(match[1]);
-      if (!nextOperations.some((operation) => operation.key === key)) {
-        navigate(`/s/${specId}/cases`, { replace: true });
+  async function reloadSpec(file, { forceOverwrite = false } = {}) {
+    const revision = specRevisionRef.current ?? spec?.updatedAt;
+    const reloadPayload = {
+      ...(spec?.baseUrl ? { baseUrl: spec.baseUrl } : {}),
+      ...(revision && !forceOverwrite ? { expectedUpdatedAt: revision } : {}),
+      ...(forceOverwrite ? { forceOverwrite: true } : {})
+    };
+    try {
+      const result = file
+        ? await Api.reloadSpecUpload(specId, file, spec?.baseUrl, reloadPayload)
+        : await Api.reloadSpec(specId, reloadPayload);
+      await syncSpecCatalogFromServer(null);
+      toast(reloadSpecToast(result));
+      return result;
+    } catch (error) {
+      const outcome = await resolveWriteConflict(error, {
+        overwritePrompt: "Reload anyway and overwrite the server revision?",
+        onReload: async (current) => {
+          await syncSpecCatalogFromServer(current);
+          toast("Loaded server copy");
+        },
+        onOverwrite: async () => {
+          await reloadSpec(file, { forceOverwrite: true });
+        }
+      }).catch(() => null);
+      if (outcome === "cancel" || outcome === "reload" || outcome === "overwrite") {
+        return null;
       }
+      throw error;
     }
-    toast(reloadSpecToast(result));
-    return result;
   }
 
   async function signOut() {
