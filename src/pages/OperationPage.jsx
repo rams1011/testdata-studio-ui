@@ -17,6 +17,8 @@ import { collectPlanExtracts, emptyFromSchema, hasResponseBodySchema, isEffectiv
 import { isXmlContentType, looksLikeXml, xmlToJson } from "../xml";
 import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { applyCurlImport } from "../curlImport";
+import { resolveWriteConflict } from "../conflict";
+import { formatInstant } from "../formatInstant";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
@@ -38,6 +40,10 @@ export default function OperationPage() {
   const [environments, setEnvironments] = useState([]);
   const [duplicateTarget, setDuplicateTarget] = useState("");
   const baseline = useRef("");
+  const [caseRevision, setCaseRevision] = useState(null);
+  const [caseEditor, setCaseEditor] = useState(null);
+  const [remoteStale, setRemoteStale] = useState(null);
+  const [auditEvents, setAuditEvents] = useState([]);
   const skipUnsavedPrompt = useRef(false);
   const curlImportRef = useRef(location.state?.curlImport);
   const [, setCleanNonce] = useState(0);
@@ -91,6 +97,9 @@ export default function OperationPage() {
       }
       setForm(nextForm);
       setRequestBody(nextBody);
+      setCaseRevision(existing?.updatedAt ?? null);
+      setCaseEditor(existing ? { updatedAt: existing.updatedAt, updatedBy: existing.updatedBy } : null);
+      setRemoteStale(null);
       setRunResult(null);
       baseline.current = snapshot(curlImport ? blank.form : nextForm, curlImport ? blank.requestBody : nextBody);
       if (curlImport) {
@@ -99,6 +108,51 @@ export default function OperationPage() {
     }).catch((error) => toast(error.message, true));
     return () => { cancelled = true; };
   }, [specId, operationKey, caseId, spec, planId, toast, navigate, location.pathname, runEnvironment?.id]);
+
+  useEffect(() => {
+    if (!boundCaseId) {
+      setAuditEvents([]);
+      return;
+    }
+    let cancelled = false;
+    Api.listCaseAudit(boundCaseId)
+      .then((events) => {
+        if (!cancelled) setAuditEvents(events || []);
+      })
+      .catch(() => {
+        if (!cancelled) setAuditEvents([]);
+      });
+    return () => { cancelled = true; };
+  }, [boundCaseId, caseRevision]);
+
+  useEffect(() => {
+    if (!boundCaseId || !caseRevision) {
+      setRemoteStale(null);
+      return;
+    }
+    let cancelled = false;
+    async function poll() {
+      try {
+        const remote = await Api.getCase(boundCaseId, runEnvironment?.id);
+        if (cancelled || !remote?.updatedAt) {
+          return;
+        }
+        if (remote.updatedAt !== caseRevision) {
+          setRemoteStale({ updatedAt: remote.updatedAt, updatedBy: remote.updatedBy });
+        } else {
+          setRemoteStale(null);
+        }
+      } catch {
+        // Ignore transient poll errors.
+      }
+    }
+    poll();
+    const timer = setInterval(poll, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [boundCaseId, caseRevision, runEnvironment?.id]);
 
   useEffect(() => {
     if (!specId) return;
@@ -264,14 +318,51 @@ export default function OperationPage() {
     }
   }
 
+  function applyServerCase(current) {
+    const nextForm = formFromCase(current);
+    const nextBody = decodeRequestBody(
+      current.requestBody,
+      operation?.requestBody?.jsonSchema,
+      nextForm.contentType
+    );
+    setForm(nextForm);
+    setRequestBody(nextBody);
+    setCaseRevision(current.updatedAt ?? null);
+    setCaseEditor({ updatedAt: current.updatedAt, updatedBy: current.updatedBy });
+    setRemoteStale(null);
+    markClean(nextForm, nextBody);
+    upsertCase(current);
+  }
+
+  async function loadRemoteCopy() {
+    if (!boundCaseId) {
+      return;
+    }
+    const current = await Api.getCase(boundCaseId, runEnvironment?.id);
+    applyServerCase(current);
+    toast("Loaded server copy");
+  }
+
+  async function persistCase(payload, { forceOverwrite = false } = {}) {
+    const body = {
+      ...payload,
+      ...(boundCaseId && caseRevision && !forceOverwrite ? { expectedUpdatedAt: caseRevision } : {}),
+      ...(forceOverwrite ? { forceOverwrite: true } : {})
+    };
+    return boundCaseId
+      ? Api.updateCase(boundCaseId, body)
+      : Api.createCase(body);
+  }
+
   async function save() {
     const payload = casePayload();
     try {
-      const saved = boundCaseId
-        ? await Api.updateCase(boundCaseId, payload)
-        : await Api.createCase(payload);
+      const saved = await persistCase(payload);
       markClean(form, requestBody);
       setBoundCaseId(saved.id);
+      setCaseRevision(saved.updatedAt ?? null);
+      setCaseEditor({ updatedAt: saved.updatedAt, updatedBy: saved.updatedBy });
+      setRemoteStale(null);
       upsertCase(saved);
       toast(boundCaseId ? "Test case updated" : "Test case saved");
       const nextPath = `/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${saved.id}`;
@@ -280,6 +371,22 @@ export default function OperationPage() {
         navigate(nextPath);
       }
     } catch (error) {
+      const outcome = await resolveWriteConflict(error, {
+        onReload: async (current) => {
+          applyServerCase(current);
+          toast("Loaded server copy");
+        },
+        onOverwrite: async () => {
+          const saved = await persistCase(payload, { forceOverwrite: true });
+          markClean(form, requestBody);
+          setCaseRevision(saved.updatedAt ?? null);
+          upsertCase(saved);
+          toast("Test case saved (overwrite)");
+        }
+      }).catch(() => null);
+      if (outcome === "cancel" || outcome === "reload" || outcome === "overwrite") {
+        return;
+      }
       toast(error.message, true);
     }
   }
@@ -301,11 +408,29 @@ export default function OperationPage() {
       return;
     }
     try {
-      const saved = await Api.updateCase(id, { ...casePayload(), requestBody: nextBody });
+      const payload = { ...casePayload(), requestBody: nextBody };
+      const saved = await persistCase(payload);
       upsertCase(saved);
+      setCaseRevision(saved.updatedAt ?? null);
       markClean(form, nextBody);
     } catch (error) {
-      toast(error.message, true);
+      const payload = { ...casePayload(), requestBody: nextBody };
+      const outcome = await resolveWriteConflict(error, {
+        onReload: async (current) => {
+          applyServerCase(current);
+          toast("Loaded server copy");
+        },
+        onOverwrite: async () => {
+          const saved = await persistCase(payload, { forceOverwrite: true });
+          upsertCase(saved);
+          setCaseRevision(saved.updatedAt ?? null);
+          markClean(form, nextBody);
+          toast("Request body saved (overwrite)");
+        }
+      }).catch(() => null);
+      if (outcome !== "cancel" && outcome !== "reload" && outcome !== "overwrite") {
+        toast(error.message, true);
+      }
     }
   }
 
@@ -437,6 +562,17 @@ export default function OperationPage() {
   return (
     <PlanExtractsProvider extracts={extractOptions}>
     <div className="op-page">
+      {remoteStale ? (
+        <div className="card warn-banner" style={{ marginBottom: 12 }}>
+          <strong>Newer version on the server</strong>
+          {" "}
+          {remoteStale.updatedBy ? `(saved by ${remoteStale.updatedBy})` : ""}
+          {" · "}
+          <button type="button" className="linkish" onClick={loadRemoteCopy}>Load server copy</button>
+          {" · "}
+          <button type="button" className="linkish" onClick={() => setRemoteStale(null)}>Dismiss</button>
+        </div>
+      ) : null}
       <div className="topbar sticky-actions">
         <div>
           <div className="crumb">{operation.tag} · {operation.key}</div>
@@ -446,6 +582,9 @@ export default function OperationPage() {
             {"  "}
             {operation.path}
             {dirty ? " · unsaved" : ""}
+            {caseEditor?.updatedAt
+              ? ` · last saved ${formatInstant(caseEditor.updatedAt)}${caseEditor.updatedBy ? ` by ${caseEditor.updatedBy}` : ""}`
+              : ""}
           </div>
         </div>
         <div className="topbar-actions">
@@ -657,6 +796,23 @@ export default function OperationPage() {
             refreshKey={historyKey}
           />
           <RunResultPanel result={runResult} />
+          {boundCaseId && auditEvents.length ? (
+            <div style={{ marginTop: 16 }}>
+            <Collapsible title="Change history" hint={`${auditEvents.length} recent events`}>
+              <ul className="audit-list">
+                {auditEvents.map((event) => (
+                  <li key={event.eventId}>
+                    <strong>{event.action}</strong>
+                    {" · "}
+                    {formatInstant(event.occurredAt)}
+                    {event.actorLabel ? ` · ${event.actorLabel}` : ""}
+                    {event.detail ? <div className="hint">{event.detail}</div> : null}
+                  </li>
+                ))}
+              </ul>
+            </Collapsible>
+            </div>
+          ) : null}
           <div className="card saved-case-list" style={{ marginTop: 16 }}>
             <h3>{runEnvironment?.name ? `Saved in ${runEnvironment.name}` : "Saved for this operation"}</h3>
             {!cases.length ? (

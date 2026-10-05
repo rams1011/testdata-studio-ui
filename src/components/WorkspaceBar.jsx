@@ -19,6 +19,7 @@ import PlanModal from "./PlanModal";
 import SpecSettingsModal, { specSettingsForm } from "./SpecSettingsModal";
 import { uniqueLabels } from "./LabelField";
 import { RELOAD_SPEC_CONFIRM } from "./Sidebar";
+import { resolveWriteConflict } from "../conflict";
 
 export default function WorkspaceBar({
   spec,
@@ -154,19 +155,40 @@ export default function WorkspaceBar({
       return;
     }
     setSavingSpec(true);
+    const payload = {
+      name: nextName,
+      label: specForm.label,
+      baseUrl: specForm.baseUrl.trim(),
+      ...(spec.updatedAt ? { expectedUpdatedAt: spec.updatedAt } : {})
+    };
     try {
-      const updated = await Api.renameSpec(specId, {
-        name: nextName,
-        label: specForm.label,
-        baseUrl: specForm.baseUrl.trim()
-      });
+      const updated = await Api.renameSpec(specId, payload);
       onSpecRenamed?.(updated);
       setSpecForm(specSettingsForm(updated));
       setLabelCatalog((current) => uniqueLabels([...current.map((item) => ({ label: item })), updated]));
       setSpecSettingsOpen(false);
       toast("Spec saved");
     } catch (error) {
-      toast(error.message, true);
+      const outcome = await resolveWriteConflict(error, {
+        onReload: async (current) => {
+          onSpecRenamed?.(current);
+          setSpecForm(specSettingsForm(current));
+          setSpecSettingsOpen(false);
+          toast("Loaded server copy");
+        },
+        onOverwrite: async () => {
+          const updated = await Api.renameSpec(specId, { ...payload, forceOverwrite: true });
+          onSpecRenamed?.(updated);
+          setSpecForm(specSettingsForm(updated));
+          setLabelCatalog((current) => uniqueLabels([...current.map((item) => ({ label: item })), updated]));
+          setSpecSettingsOpen(false);
+          toast("Spec saved (overwrite)");
+        },
+        overwritePrompt: "Save anyway and overwrite the server revision?"
+      }).catch(() => null);
+      if (outcome !== "cancel" && outcome !== "reload" && outcome !== "overwrite") {
+        toast(error.message, true);
+      }
     } finally {
       setSavingSpec(false);
     }

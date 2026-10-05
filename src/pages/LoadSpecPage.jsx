@@ -7,6 +7,7 @@ import AddSpecModal from "../components/AddSpecModal";
 import { useToast } from "../components/Toast";
 import { groupSpecs, touchRecentSpec } from "../specCatalog";
 import { RELOAD_SPEC_CONFIRM, reloadSpecToast } from "../components/Sidebar";
+import { resolveWriteConflict } from "../conflict";
 import { importCollectionToast } from "./ExportPage";
 
 export default function LoadSpecPage() {
@@ -185,16 +186,33 @@ export default function LoadSpecPage() {
     navigate("/login");
   }
 
-  async function reloadExisting(spec, file) {
+  async function reloadExisting(spec, file, { forceOverwrite = false } = {}) {
     setReloadingId(spec.specId);
+    const payload = {
+      ...(spec.baseUrl ? { baseUrl: spec.baseUrl } : {}),
+      ...(spec.updatedAt && !forceOverwrite ? { expectedUpdatedAt: spec.updatedAt } : {}),
+      ...(forceOverwrite ? { forceOverwrite: true } : {})
+    };
     try {
       const result = file
-        ? await Api.reloadSpecUpload(spec.specId, file, spec.baseUrl)
-        : await Api.reloadSpec(spec.specId, spec.baseUrl ? { baseUrl: spec.baseUrl } : {});
+        ? await Api.reloadSpecUpload(spec.specId, file, spec.baseUrl, payload)
+        : await Api.reloadSpec(spec.specId, payload);
       await refreshSpecs();
       toast(reloadSpecToast(result));
     } catch (error) {
-      toast(error.message, true);
+      const outcome = await resolveWriteConflict(error, {
+        overwritePrompt: "Reload anyway and overwrite the server revision?",
+        onReload: async () => {
+          await refreshSpecs();
+          toast("Loaded server copy of spec metadata");
+        },
+        onOverwrite: async () => {
+          await reloadExisting(spec, file, { forceOverwrite: true });
+        }
+      }).catch(() => null);
+      if (outcome !== "cancel" && outcome !== "reload" && outcome !== "overwrite") {
+        toast(error.message, true);
+      }
     } finally {
       setReloadingId("");
     }

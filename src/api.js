@@ -38,6 +38,15 @@ export function apiUrl(path) {
   return `${API_BASE}${path}`;
 }
 
+export class ApiError extends Error {
+  constructor(message, { status, body } = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 function errorMessage(body, status) {
   if (body && typeof body.error === "string" && body.error) {
     return body.error;
@@ -96,7 +105,7 @@ async function request(path, options = {}) {
       window.dispatchEvent(new Event("testdata:unauthorized"));
     }
     if (!response.ok) {
-      throw new Error(errorMessage(body, response.status));
+      throw new ApiError(errorMessage(body, response.status), { status: response.status, body });
     }
     return body;
   } finally {
@@ -266,11 +275,17 @@ export const Api = {
     });
   },
 
-  reloadSpecUpload(specId, file, baseUrl) {
+  reloadSpecUpload(specId, file, baseUrl, extra = {}) {
     const data = new FormData();
     data.append("file", file);
     if (baseUrl) {
       data.append("baseUrl", baseUrl);
+    }
+    if (extra.expectedUpdatedAt) {
+      data.append("expectedUpdatedAt", extra.expectedUpdatedAt);
+    }
+    if (extra.forceOverwrite) {
+      data.append("forceOverwrite", "true");
     }
     return request(`/api/specs/${encodeURIComponent(specId)}/reload/upload`, { method: "POST", body: data });
   },
@@ -343,6 +358,20 @@ export const Api = {
 
   updateCase(id, payload) {
     return request(`/api/testdata/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+
+  getCase(id, environmentId) {
+    const query = new URLSearchParams();
+    if (environmentId) {
+      query.set("environmentId", environmentId);
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request(`/api/testdata/${encodeURIComponent(id)}${suffix}`);
+  },
+
+  listCaseAudit(caseId, limit = 20) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    return request(`/api/testdata/${encodeURIComponent(caseId)}/audit?${query.toString()}`);
   },
 
   deleteCase(id, environmentId) {
