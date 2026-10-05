@@ -1,5 +1,3 @@
-import HomeLink from "../components/HomeLink";
-
 const SECTIONS = [
   { id: "overview", title: "Overview" },
   { id: "home", title: "Home and specs" },
@@ -23,9 +21,6 @@ export default function GuidePage() {
     <div className="hero guide-hero">
       <div className="hero-head guide-head">
         <h1>User guide</h1>
-        <div className="hero-head-actions">
-          <HomeLink />
-        </div>
       </div>
 
       <div className="guide-layout">

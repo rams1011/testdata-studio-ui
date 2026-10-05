@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Api } from "../api";
-import { canManageMembers, isBillingEnabled, isWorkspaceReady, clearSession } from "../session";
+import { canManageMembers, isBillingEnabled, isAuthEnabled, isSignedIn, isWorkspaceReady, clearSession } from "../session";
 import Sidebar, { reloadSpecToast } from "../components/Sidebar";
 import WorkspaceBar from "../components/WorkspaceBar";
 import AddApiModal from "../components/AddApiModal";
@@ -353,10 +353,10 @@ export default function StudioLayout() {
             envEpoch={envEpoch}
             onEnvironmentChange={handleEnvironmentChange}
             onEnvironmentsChanged={() => setEnvEpoch((current) => current + 1)}
-            account={session?.authenticated || session?.account ? session.account : null}
-            canManage={Boolean(session?.saas) && isWorkspaceReady(session) && canManageMembers(session)}
-            canManageSubscriptions={Boolean(session?.authenticated && isBillingEnabled(session))}
-            onSignOut={session?.authenticated || session?.account ? signOut : null}
+            account={isSignedIn(session) ? session.account : null}
+            canManage={isAuthEnabled(session) && isWorkspaceReady(session) && canManageMembers(session)}
+            canManageSubscriptions={isSignedIn(session) && isBillingEnabled(session)}
+            onSignOut={isSignedIn(session) ? signOut : null}
           />
         ) : null}
         <main className="main">

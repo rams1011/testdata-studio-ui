@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import GuideLink from "../components/GuideLink";
 import { IconButton, RefreshIcon, SpinnerIcon, TrashIcon } from "../components/RunIconButton";
 import { API_DISPLAY, Api } from "../api";
-import { canManageMembers, clearSession, isAuthEnabled, isBillingEnabled, isWorkspaceReady, saveSession, subscriptionBanner } from "../session";
+import { canManageMembers, clearSession, isAuthEnabled, isBillingEnabled, isSignedIn, isWorkspaceReady, saveSession, subscriptionBanner } from "../session";
 import AccountMenu from "../components/AccountMenu";
 import AddSpecModal from "../components/AddSpecModal";
 import StartWithoutOpenApiModal from "../components/StartWithoutOpenApiModal";
@@ -260,9 +260,9 @@ export default function LoadSpecPage() {
   }
 
   const apiDown = backend.status === "down";
-  const saasOn = isAuthEnabled(backend.session, backend.config) || Boolean(backend.saas);
+  const saasOn = isAuthEnabled(backend.session, backend.config);
   const billingOn = isBillingEnabled(backend.session, backend.config);
-  const signedIn = saasOn && Boolean(backend.session?.authenticated || backend.session?.account);
+  const signedIn = isSignedIn(backend.session, backend.config);
   const saasLocked = saasOn && !signedIn;
   const workspacePending = signedIn && !isWorkspaceReady(backend.session);
   const studioOpen = signedIn && isWorkspaceReady(backend.session);
