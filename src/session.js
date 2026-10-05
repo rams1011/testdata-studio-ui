@@ -38,6 +38,14 @@ export function isAuthEnabled(session, config) {
   return edition === "saas" || edition === "datacenter";
 }
 
+/** True when auth is on and the user has an authenticated studio session (not local/no-login mode). */
+export function isSignedIn(session, config) {
+  if (!isAuthEnabled(session, config)) {
+    return false;
+  }
+  return Boolean(session?.authenticated || session?.account);
+}
+
 export function isBillingEnabled(session, config) {
   return studioEdition(session, config) === "saas";
 }
