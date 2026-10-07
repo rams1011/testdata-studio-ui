@@ -49,6 +49,53 @@ export function RefreshIcon() {
   );
 }
 
+/** Run timeline — clock (tooltip: Last runs) */
+export function LastRunsIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 4.8V8l2.2 1.4" />
+    </svg>
+  );
+}
+
+/** Audit / change log — document with bulleted entries (tooltip: Change history) */
+export function ChangeHistoryIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3.5" y="2.5" width="9" height="11" rx="1" />
+      <circle cx="5.8" cy="6" r="0.65" fill="currentColor" stroke="none" />
+      <path d="M7.2 6h5" />
+      <circle cx="5.8" cy="8.5" r="0.65" fill="currentColor" stroke="none" />
+      <path d="M7.2 8.5h5" />
+      <circle cx="5.8" cy="11" r="0.65" fill="currentColor" stroke="none" />
+      <path d="M7.2 11h3.5" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">

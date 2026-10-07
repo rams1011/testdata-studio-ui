@@ -1,4 +1,9 @@
-import RunIconButton, { IconButton, TrashIcon } from "./RunIconButton";
+import RunIconButton, {
+  ChangeHistoryIcon,
+  IconButton,
+  LastRunsIcon,
+  TrashIcon
+} from "./RunIconButton";
 
 function PencilIcon() {
   return (
@@ -29,7 +34,9 @@ export default function SavedCaseActions({
   onRun,
   onEdit,
   onDuplicate,
-  onDelete
+  onDelete,
+  onLastRuns,
+  onChangeHistory
 }) {
   const name = testName || "test case";
 
@@ -63,6 +70,24 @@ export default function SavedCaseActions({
       >
         <TrashIcon />
       </IconButton>
+      {onLastRuns ? (
+        <IconButton
+          label={`Last runs for ${name}`}
+          title="Last runs"
+          onClick={onLastRuns}
+        >
+          <LastRunsIcon />
+        </IconButton>
+      ) : null}
+      {onChangeHistory ? (
+        <IconButton
+          label={`Change history for ${name}`}
+          title="Audit log"
+          onClick={onChangeHistory}
+        >
+          <ChangeHistoryIcon />
+        </IconButton>
+      ) : null}
     </div>
   );
 }
