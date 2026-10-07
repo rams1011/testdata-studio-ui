@@ -753,17 +753,19 @@ export default function OperationPage() {
             <button type="button" className="btn" onClick={() => setImportOpen(true)}>
               Import from curl
             </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/new`)}
-            >
-              New case
-            </button>
             {boundCaseId ? (
-              <button type="button" className="btn" onClick={duplicateCurrentCase}>
-                Duplicate
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/new`)}
+                >
+                  New case
+                </button>
+                <button type="button" className="btn" onClick={duplicateCurrentCase}>
+                  Duplicate
+                </button>
+              </>
             ) : null}
             {spec?.manual ? (
               <button type="button" className="btn danger" onClick={removeApi}>
