@@ -28,13 +28,18 @@ export function caseSaveIssues(form, operation, requestBody) {
     caseItems.push({ key: "testName", label: "Test name", anchorId: "op-field-testName" });
   }
   if (!String(form.baseUrl || "").trim()) {
-    caseItems.push({ key: "baseUrl", label: "Base URL", anchorId: "op-field-baseUrl" });
-  }
-  if (!String(form.statusCode ?? "").trim()) {
-    caseItems.push({ key: "statusCode", label: "Expected status", anchorId: "op-field-statusCode" });
+    caseItems.push({ key: "baseUrl", label: "Server URL", anchorId: "op-field-baseUrl" });
   }
   if (caseItems.length) {
     groups.push({ id: "case", title: "Test case", items: caseItems });
+  }
+
+  const responseItems = [];
+  if (!String(form.statusCode ?? "").trim()) {
+    responseItems.push({ key: "statusCode", label: "Expected status", anchorId: "op-field-statusCode" });
+  }
+  if (responseItems.length) {
+    groups.push({ id: "expected-response", title: "Expected response", items: responseItems });
   }
 
   appendParamGroups(groups, form, operation, { requiredOnly: true });
@@ -79,7 +84,7 @@ export function draftRunIssues(form, operation) {
   const groups = [];
   const items = [];
   if (!String(form.baseUrl || "").trim()) {
-    items.push({ key: "baseUrl", label: "Base URL", anchorId: "op-field-baseUrl" });
+    items.push({ key: "baseUrl", label: "Server URL", anchorId: "op-field-baseUrl" });
   }
   (operation.parameters || [])
     .filter((parameter) => parameter.in === "path")

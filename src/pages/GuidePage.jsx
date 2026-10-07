@@ -108,7 +108,8 @@ export default function GuidePage() {
               Case counts show how many saved cases exist per operation in the current plan and environment.
             </p>
             <p>
-              Click an operation to open the case editor. Manual specs have a <strong>quick add</strong> bar in the sidebar (method, path, optional query names, +) and <strong>Add API</strong> for labels, query parameters, and other schema hints.
+              Click an operation: if there are no saved cases you go straight to the editor; one case opens that case; two or more show a case list with <strong>Add test case</strong>.
+              Direct links to <code>/case/…</code> always open the editor. Manual specs have a <strong>quick add</strong> bar in the sidebar and <strong>Add API</strong> for schema hints.
             </p>
           </section>
 
@@ -116,7 +117,10 @@ export default function GuidePage() {
             <h2>Building a test case</h2>
             <p>Each case stores metadata and request/response expectations for one operation.</p>
             <ul>
-              <li><strong>Test name</strong>, group, enabled flag, base URL, expected HTTP status, response type, max response time.</li>
+              <li>
+                Two compact header bars: operation tag and method on the left, editable <strong>test name</strong> on the right; then server URL with the OpenAPI path (like a browser address bar). Use the server preset dropdown when the spec lists multiple servers.
+                <strong>Content type</strong> is under <strong>Request body</strong>. Test group is assigned automatically (OpenAPI tag) for exports and CI filtering. New cases are enabled for plan runs by default.
+              </li>
               <li><strong>Parameters</strong> — <strong>Path</strong>, <strong>Query</strong>, and <strong>Headers</strong> tabs; cookies below. Use <strong>Add query</strong> / <strong>Add header</strong> for extras. Required fields are marked with *.</li>
               <li><strong>Run authentication</strong> — credentials for Try / Run (session-only; not stored on the environment record).</li>
             </ul>
@@ -126,7 +130,7 @@ export default function GuidePage() {
             </p>
             <p>
               <strong>Save</strong> creates or updates the case in the current environment.
-              <strong> New case</strong> clears the form for another case on the same operation.
+              <strong> New case</strong> opens a blank editor at <code>/new</code> for another case on the same operation.
               <strong> Import from curl</strong> fills the form from a copied curl command (and can create a manual API if needed).
             </p>
           </section>
@@ -143,7 +147,7 @@ export default function GuidePage() {
 
           <section id="response" className="guide-section">
             <h2>Expected response and assertions</h2>
-            <p><strong>Expected response</strong> is optional. Use Form or JSON/XML to describe the body you expect; leave blank to assert status (and timing) only. <strong>Clear</strong> removes the body after confirmation.</p>
+            <p><strong>Expected status</strong>, <strong>response type</strong>, and <strong>max response ms</strong> define what a passing run looks like at the HTTP level. The body below is optional — use Form or JSON/XML to describe it; leave blank to assert status (and timing) only. <strong>Clear</strong> removes the body after confirmation.</p>
             <p><strong>JSONPath assertions</strong> — select schema paths and optional expected values. Values can follow the expected response document. Use <strong>Select all</strong> or add custom paths. <strong>Clear</strong> deselects all paths after confirmation.</p>
             <p><strong>Extract for later cases</strong> — pick response fields to expose as <code>{`{{variables}}`}</code> for later cases in the same plan run.</p>
           </section>

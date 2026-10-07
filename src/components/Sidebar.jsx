@@ -59,7 +59,12 @@ export default function Sidebar({
         key={operation.key}
         to={`/s/${specId}/op/${encodeURIComponent(operation.key)}`}
         title={`${operation.method} ${operation.path}`}
-        className={({ isActive }) => `op-item ${isActive ? "active" : ""}`}
+        className={() => {
+          const base = `/s/${specId}/op/${encodeURIComponent(operation.key)}`;
+          const path = location.pathname;
+          const active = path === base || path.startsWith(`${base}/`);
+          return `op-item ${active ? "active" : ""}`;
+        }}
       >
         <span className={`method ${operation.method}`}>{operation.method}</span>
         <span className="op-copy">

@@ -240,7 +240,7 @@ export default function StudioLayout() {
     if (!operation) {
       throw new Error(`No operation in this spec matches ${parsed.method} ${parsed.pathname}`);
     }
-    navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`, { state: { curlImport: parsed } });
+    navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/new`, { state: { curlImport: parsed } });
     return operation;
   }
 
@@ -368,6 +368,7 @@ export default function StudioLayout() {
               plans,
               plan,
               planId,
+              cases,
               selectPlan,
               reloadPlans,
               reloadCases,

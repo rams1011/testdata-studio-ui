@@ -7,11 +7,8 @@ import ExtractsPicker from "../components/ExtractsPicker";
 import ExtractValueField, { PlanExtractsProvider } from "../components/ExtractValueField";
 import ImportCurlModal from "../components/ImportCurlModal";
 import DuplicateCaseModal from "../components/DuplicateCaseModal";
-import SavedCaseActions from "../components/SavedCaseActions";
-import CaseAuditMeta from "../components/CaseAuditMeta";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
 import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
-import LastRunsStrip from "../components/LastRunsStrip";
 import ValidationSummary from "../components/ValidationSummary";
 import {
   blockerTitle,
@@ -39,6 +36,7 @@ import { allowedStatusCodes, statusLabel } from "../httpStatus";
 import { applyCurlImport } from "../curlImport";
 import { resolveWriteConflict } from "../conflict";
 import { formatInstant } from "../formatInstant";
+import { caseUpdateFromView, defaultDuplicateName } from "./operationCaseHelpers";
 
 export default function OperationPage() {
   const { specId, operationKey, caseId } = useParams();
@@ -52,7 +50,8 @@ export default function OperationPage() {
     runEnvironment,
     environmentReady,
     envEpoch,
-    onEnvironmentsChanged
+    onEnvironmentsChanged,
+    reloadCases
   } = useOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
@@ -66,21 +65,26 @@ export default function OperationPage() {
   const [auth, setAuth] = useSpecAuth(specId);
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(null);
-  const [historyKey, setHistoryKey] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [environments, setEnvironments] = useState([]);
   const [duplicateModal, setDuplicateModal] = useState(null);
   const [duplicateSaving, setDuplicateSaving] = useState(false);
   const [paramSubTab, setParamSubTab] = useState("path");
   const baseline = useRef("");
+  const caseRevisionRef = useRef(null);
+  const lastLoadedCaseIdRef = useRef(null);
   const [caseRevision, setCaseRevision] = useState(null);
   const [caseEditor, setCaseEditor] = useState(null);
   const [remoteStale, setRemoteStale] = useState(null);
-  const [auditEvents, setAuditEvents] = useState([]);
   const skipUnsavedPrompt = useRef(false);
   const curlImportRef = useRef(location.state?.curlImport);
   const [, setCleanNonce] = useState(0);
   curlImportRef.current = location.state?.curlImport;
+
+  function syncCaseRevision(next) {
+    caseRevisionRef.current = next ?? null;
+    setCaseRevision(next ?? null);
+  }
 
   useEffect(() => {
     setBoundCaseId(caseId);
@@ -136,35 +140,23 @@ export default function OperationPage() {
         }
         toast("Imported curl into a new unsaved case");
       }
-      setForm(nextForm);
-      setRequestBody(nextBody);
-      setCaseRevision(existing?.updatedAt ?? null);
-      setCaseEditor(existing ? { updatedAt: existing.updatedAt, updatedBy: existing.updatedBy } : null);
-      setRemoteStale(null);
-      setRunResult(null);
-      baseline.current = snapshot(curlImport ? blank.form : nextForm, curlImport ? blank.requestBody : nextBody);
+      const sameCaseSession = caseId && caseId === lastLoadedCaseIdRef.current && caseRevisionRef.current;
+      if (!sameCaseSession) {
+        setForm(nextForm);
+        setRequestBody(nextBody);
+        syncCaseRevision(existing?.updatedAt ?? null);
+        setCaseEditor(existing ? { updatedAt: existing.updatedAt, updatedBy: existing.updatedBy } : null);
+        setRemoteStale(null);
+        setRunResult(null);
+        baseline.current = snapshot(curlImport ? blank.form : nextForm, curlImport ? blank.requestBody : nextBody);
+        lastLoadedCaseIdRef.current = caseId || null;
+      }
       if (curlImport) {
         navigate(location.pathname, { replace: true, state: {} });
       }
     }).catch((error) => toast(error.message, true));
     return () => { cancelled = true; };
-  }, [specId, operationKey, caseId, spec, planId, toast, navigate, location.pathname, runEnvironment?.id]);
-
-  useEffect(() => {
-    if (!boundCaseId) {
-      setAuditEvents([]);
-      return;
-    }
-    let cancelled = false;
-    Api.listCaseAudit(boundCaseId)
-      .then((events) => {
-        if (!cancelled) setAuditEvents(events || []);
-      })
-      .catch(() => {
-        if (!cancelled) setAuditEvents([]);
-      });
-    return () => { cancelled = true; };
-  }, [boundCaseId, caseRevision]);
+  }, [specId, operationKey, caseId, spec?.manual, spec?.baseUrl, planId, toast, navigate, location.pathname, runEnvironment?.id]);
 
   useEffect(() => {
     if (!boundCaseId || !caseRevision) {
@@ -358,7 +350,7 @@ export default function OperationPage() {
     );
     setForm(nextForm);
     setRequestBody(nextBody);
-    setCaseRevision(current.updatedAt ?? null);
+    syncCaseRevision(current.updatedAt ?? null);
     setCaseEditor({ updatedAt: current.updatedAt, updatedBy: current.updatedBy });
     setRemoteStale(null);
     markClean(nextForm, nextBody);
@@ -374,15 +366,42 @@ export default function OperationPage() {
     toast("Loaded server copy");
   }
 
-  async function persistCase(payload, { forceOverwrite = false } = {}) {
+  async function refreshCaseRevisionFromServer() {
+    if (!boundCaseId) {
+      return;
+    }
+    try {
+      const remote = await Api.getCase(boundCaseId, runEnvironment?.id);
+      if (remote?.updatedAt) {
+        syncCaseRevision(remote.updatedAt);
+      }
+    } catch {
+      // Save will surface errors if revision is still wrong.
+    }
+  }
+
+  async function persistCase(payload, { forceOverwrite = false, retried = false } = {}) {
+    if (!forceOverwrite && boundCaseId) {
+      await refreshCaseRevisionFromServer();
+    }
     const body = {
       ...payload,
-      ...(boundCaseId && caseRevision && !forceOverwrite ? { expectedUpdatedAt: caseRevision } : {}),
+      ...(boundCaseId && caseRevisionRef.current && !forceOverwrite
+        ? { expectedUpdatedAt: caseRevisionRef.current }
+        : {}),
       ...(forceOverwrite ? { forceOverwrite: true } : {})
     };
-    return boundCaseId
-      ? Api.updateCase(boundCaseId, body)
-      : Api.createCase(body);
+    try {
+      return boundCaseId
+        ? await Api.updateCase(boundCaseId, body)
+        : await Api.createCase(body);
+    } catch (error) {
+      if (!forceOverwrite && !retried && boundCaseId && error?.status === 409) {
+        await refreshCaseRevisionFromServer();
+        return persistCase(payload, { forceOverwrite: false, retried: true });
+      }
+      throw error;
+    }
   }
 
   async function save() {
@@ -391,10 +410,11 @@ export default function OperationPage() {
       const saved = await persistCase(payload);
       markClean(form, requestBody);
       setBoundCaseId(saved.id);
-      setCaseRevision(saved.updatedAt ?? null);
+      syncCaseRevision(saved.updatedAt ?? null);
       setCaseEditor({ updatedAt: saved.updatedAt, updatedBy: saved.updatedBy });
       setRemoteStale(null);
       upsertCase(saved);
+      reloadCases?.();
       toast(boundCaseId ? "Test case updated" : "Test case saved");
       const nextPath = `/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${saved.id}`;
       if (caseId !== saved.id) {
@@ -410,7 +430,7 @@ export default function OperationPage() {
         onOverwrite: async () => {
           const saved = await persistCase(payload, { forceOverwrite: true });
           markClean(form, requestBody);
-          setCaseRevision(saved.updatedAt ?? null);
+          syncCaseRevision(saved.updatedAt ?? null);
           upsertCase(saved);
           toast("Test case saved (overwrite)");
         }
@@ -432,17 +452,20 @@ export default function OperationPage() {
     return saved.id;
   }
 
-  async function commitRequestBody(nextBody, savedCaseId) {
+  async function commitRequestBody(nextBody, savedCaseId, meta) {
     setRequestBody(nextBody);
     const id = savedCaseId || boundCaseId;
     if (!id) {
       return;
     }
+    if (meta?.caseUpdatedAt) {
+      syncCaseRevision(meta.caseUpdatedAt);
+    }
     try {
       const payload = { ...casePayload(), requestBody: nextBody };
       const saved = await persistCase(payload);
       upsertCase(saved);
-      setCaseRevision(saved.updatedAt ?? null);
+      syncCaseRevision(saved.updatedAt ?? null);
       markClean(form, nextBody);
     } catch (error) {
       const payload = { ...casePayload(), requestBody: nextBody };
@@ -454,7 +477,7 @@ export default function OperationPage() {
         onOverwrite: async () => {
           const saved = await persistCase(payload, { forceOverwrite: true });
           upsertCase(saved);
-          setCaseRevision(saved.updatedAt ?? null);
+          syncCaseRevision(saved.updatedAt ?? null);
           markClean(form, nextBody);
           toast("Request body saved (overwrite)");
         }
@@ -492,7 +515,6 @@ export default function OperationPage() {
         environmentId: runEnvironment?.id
       });
       setRunResult(result);
-      setHistoryKey((value) => value + 1);
       toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
     } catch (error) {
       toast(error.message, true);
@@ -554,6 +576,7 @@ export default function OperationPage() {
       } else {
         await refreshPlanCases();
       }
+      reloadCases?.();
       if (openCopy) {
         if (targetEnvironmentId !== runEnvironment?.id) {
           sessionStorage.setItem(`testdata.env.${specId}`, targetEnvironmentId);
@@ -575,37 +598,6 @@ export default function OperationPage() {
       toast(error.message, true);
     } finally {
       setDuplicateSaving(false);
-    }
-  }
-
-  async function runSaved(id) {
-    setRunning(id);
-    try {
-      const result = await Api.runCase(id, auth, runEnvironment?.id);
-      setRunResult(result);
-      setHistoryKey((value) => value + 1);
-      toast(result.passed ? "Passed" : (result.error || "Failed"), !result.passed);
-    } catch (error) {
-      toast(error.message, true);
-    } finally {
-      setRunning(null);
-    }
-  }
-
-  async function remove(id) {
-    if (!window.confirm(`Delete this case${runEnvironment?.name ? ` from ${runEnvironment.name}` : ""}?`)) {
-      return;
-    }
-    try {
-      await Api.deleteCase(id, runEnvironment?.id);
-      toast("Test case deleted");
-      if (id === caseId) {
-        navigate(`/s/${specId}/op/${encodeURIComponent(operationKey)}`);
-      } else {
-        await refreshPlanCases();
-      }
-    } catch (error) {
-      toast(error.message, true);
     }
   }
 
@@ -662,6 +654,7 @@ export default function OperationPage() {
 
   const authCue = runResult && !runResult.passed && runResult.actualStatus === 401
     && authCredentialsMissing(auth, runEnvironment?.authType);
+  const headerExtras = operationHeaderExtras(operation);
 
   return (
     <PlanExtractsProvider extracts={extractOptions}>
@@ -678,18 +671,73 @@ export default function OperationPage() {
         </div>
       ) : null}
       <div className="topbar sticky-actions">
-        <div>
-          <div className="crumb">{operation.tag} · {operation.key}</div>
-          <h2>{operation.summary || operation.key}</h2>
-          <div className="crumb">
-            <span className={`method ${operation.method}`}>{operation.method}</span>
-            {"  "}
-            {operation.path}
-            {dirty ? " · unsaved" : ""}
-            {caseEditor?.updatedAt
-              ? ` · last saved ${formatInstant(caseEditor.updatedAt)}${caseEditor.updatedBy ? ` by ${caseEditor.updatedBy}` : ""}`
-              : ""}
+        <div className="case-header">
+          <div
+            id="op-field-testName"
+            className={`case-header-target${missingSaveKeys.has("testName") ? " case-header-bar-missing" : ""}`}
+          >
+            <div className="case-header-bar-prefix case-header-op">
+              <span className="crumb">{operation.tag} · </span>
+              <span className={`method ${operation.method}`}>{operation.method}</span>
+              {headerExtras.showKey ? (
+                <span className="case-header-key">{operation.key}</span>
+              ) : null}
+              {headerExtras.showSummary ? (
+                <span className="case-header-summary">{operation.summary}</span>
+              ) : null}
+            </div>
+            <input
+              type="text"
+              className="case-header-bar-input"
+              aria-label="Test name"
+              aria-required="true"
+              placeholder="Test name"
+              value={form.testName}
+              onChange={(event) => setForm({ ...form, testName: event.target.value })}
+            />
           </div>
+          <div
+            id="op-field-baseUrl"
+            className={`case-header-target${missingSaveKeys.has("baseUrl") ? " case-header-bar-missing" : ""}`}
+          >
+            {(operation.servers || spec.servers || []).length > 1 ? (
+              <select
+                className="case-header-server-pick"
+                aria-label="Server from spec"
+                value={form.baseUrl}
+                onChange={(event) => setForm({ ...form, baseUrl: event.target.value })}
+              >
+                {(operation.servers || spec.servers).map((server) => {
+                  const url = server.resolvedUrl || server.url;
+                  const label = server.description ? `${server.description} · ${url}` : url;
+                  return (
+                    <option key={url} value={url}>{label}</option>
+                  );
+                })}
+              </select>
+            ) : null}
+            <input
+              type="text"
+              className="case-header-bar-input"
+              aria-label="Server URL"
+              aria-required="true"
+              autoComplete="url"
+              placeholder="https://host.example.com"
+              value={form.baseUrl}
+              onChange={(event) => setForm({ ...form, baseUrl: event.target.value })}
+            />
+            <code className="case-header-bar-suffix">{operation.path}</code>
+          </div>
+          {dirty || caseEditor?.updatedAt ? (
+            <div className="case-header-meta crumb">
+              {[
+                dirty ? "unsaved" : null,
+                caseEditor?.updatedAt
+                  ? `last saved ${formatInstant(caseEditor.updatedAt)}${caseEditor.updatedBy ? ` by ${caseEditor.updatedBy}` : ""}`
+                  : null
+              ].filter(Boolean).join(" · ")}
+            </div>
+          ) : null}
         </div>
         <div className="topbar-actions">
           <div className="actions">
@@ -705,7 +753,11 @@ export default function OperationPage() {
             <button type="button" className="btn" onClick={() => setImportOpen(true)}>
               Import from curl
             </button>
-            <button type="button" className="btn" onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}`)}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/new`)}
+            >
               New case
             </button>
             {boundCaseId ? (
@@ -745,81 +797,9 @@ export default function OperationPage() {
         </div>
       ) : null}
 
-      <div className="grid">
-        <div>
+      <div className={`op-case-layout${runResult ? " op-case-layout-split" : ""}`}>
+        <div className="op-case-main">
           <AuthSettings auth={auth} onChange={setAuth} specAuth={operation.auth} environment={runEnvironment} />
-
-          <div className="card" style={{ marginTop: 16 }}>
-            <h3>Test case</h3>
-            <CaseAuditMeta testCase={cases.find((item) => item.id === boundCaseId)} />
-            <Field
-              id="op-field-testName"
-              label="Test name"
-              required
-              invalid={missingSaveKeys.has("testName")}
-              value={form.testName}
-              onChange={(testName) => setForm({ ...form, testName })}
-            />
-            <div className="row-2">
-              <Field label="Test group" value={form.testGroup} onChange={(testGroup) => setForm({ ...form, testGroup })} />
-              <SelectField label="Enabled" value={form.enabled} options={["Y", "N"]} onChange={(enabled) => setForm({ ...form, enabled })} />
-            </div>
-            {(operation.servers || spec.servers || []).length > 1 ? (
-              <SelectField
-                label="Server"
-                value={form.baseUrl}
-                options={(operation.servers || spec.servers).map((server) => {
-                  const url = server.resolvedUrl || server.url;
-                  return {
-                    value: url,
-                    label: server.description ? `${server.description} · ${url}` : url
-                  };
-                })}
-                onChange={(baseUrl) => setForm({ ...form, baseUrl })}
-              />
-            ) : null}
-            <Field
-              id="op-field-baseUrl"
-              label="Base URL"
-              required
-              invalid={missingSaveKeys.has("baseUrl")}
-              value={form.baseUrl}
-              onChange={(baseUrl) => setForm({ ...form, baseUrl })}
-            />
-            <div className="row-3" id="op-field-statusCode">
-              <StatusCodeField
-                value={form.statusCode}
-                options={statusOptions}
-                invalid={missingSaveKeys.has("statusCode")}
-                onChange={(statusCode) => setForm({ ...form, statusCode })}
-              />
-              <SelectField
-                label="Response type"
-                value={form.responseType}
-                options={["JSON", "NONE", "STRING", "FILE"]}
-                onChange={(responseType) => setForm({ ...form, responseType })}
-              />
-              <Field label="Max response ms" type="number" value={form.maxResponseTimeMs} onChange={(maxResponseTimeMs) => setForm({ ...form, maxResponseTimeMs })} />
-            </div>
-            {(operation.requestContentTypes || []).length > 0 ? (
-              <SelectField
-                label="Content type"
-                value={matchedContentType(form.contentType, operation.requestContentTypes)}
-                options={operation.requestContentTypes.map((item) => ({
-                  value: item,
-                  label: item
-                }))}
-                onChange={(contentType) => setForm({ ...form, contentType })}
-              />
-            ) : (
-              <Field
-                label="Content type"
-                hint="Leave blank if none"
-                value={blankNa(form.contentType)}
-                onChange={(contentType) => setForm({ ...form, contentType })}
-              />
-            )}
-          </div>
 
           <div className="card" style={{ marginTop: 16 }}>
             <h3>Parameters</h3>
@@ -926,6 +906,27 @@ export default function OperationPage() {
           >
             <h3>Request body{operation.requestBody?.required ? <span className="req"> *</span> : null}</h3>
             {allowsManualRequestBody(operation, spec?.manual) ? (
+              <>
+            {(operation.requestContentTypes || []).length > 0 ? (
+              <SelectField
+                className="op-request-content-type"
+                label="Content type"
+                value={matchedContentType(form.contentType, operation.requestContentTypes)}
+                options={operation.requestContentTypes.map((item) => ({
+                  value: item,
+                  label: item
+                }))}
+                onChange={(contentType) => setForm({ ...form, contentType })}
+              />
+            ) : (
+              <Field
+                className="op-request-content-type"
+                label="Content type"
+                placeholder="Leave blank if none"
+                value={blankNa(form.contentType)}
+                onChange={(contentType) => setForm({ ...form, contentType })}
+              />
+            )}
               <RequestBodyEditor
                 key={`${operationKey}-${caseId || "new"}`}
                 resetKey={`${operationKey}-${caseId || "new"}`}
@@ -938,13 +939,29 @@ export default function OperationPage() {
                 contentType={form.contentType}
                 environmentId={runEnvironment?.id}
               />
+              </>
             ) : (
               <div className="empty">This operation has no request body.</div>
             )}
           </div>
 
-          <div className="card" style={{ marginTop: 16 }}>
+          <div className="card" style={{ marginTop: 16 }} id="op-section-expected-response">
             <h3>Expected response</h3>
+            <div className="row-3" id="op-field-statusCode" style={{ marginBottom: 12 }}>
+              <StatusCodeField
+                value={form.statusCode}
+                options={statusOptions}
+                invalid={missingSaveKeys.has("statusCode")}
+                onChange={(statusCode) => setForm({ ...form, statusCode })}
+              />
+              <SelectField
+                label="Response type"
+                value={form.responseType}
+                options={["JSON", "NONE", "STRING", "FILE"]}
+                onChange={(responseType) => setForm({ ...form, responseType })}
+              />
+              <Field label="Max response ms" type="number" value={form.maxResponseTimeMs} onChange={(maxResponseTimeMs) => setForm({ ...form, maxResponseTimeMs })} />
+            </div>
             <ExpectedResponseEditor
               key={`${operationKey}-${caseId || "new"}-expected`}
               resetKey={`${operationKey}-${caseId || "new"}`}
@@ -984,61 +1001,11 @@ export default function OperationPage() {
             />
           </Collapsible>
         </div>
-
-        <div>
-          <RunResultPanel result={runResult} />
-          {boundCaseId && auditEvents.length ? (
-            <div style={{ marginTop: 16 }}>
-            <Collapsible title="Change history" hint={`${auditEvents.length} recent events`}>
-              <ul className="audit-list">
-                {auditEvents.map((event) => (
-                  <li key={event.eventId}>
-                    <strong>{event.action}</strong>
-                    {" · "}
-                    {formatInstant(event.occurredAt)}
-                    {event.actorLabel ? ` · ${event.actorLabel}` : ""}
-                    {event.detail ? <div className="hint">{event.detail}</div> : null}
-                  </li>
-                ))}
-              </ul>
-            </Collapsible>
-            </div>
-          ) : null}
-          <div className="card saved-case-list" style={{ marginTop: 16 }}>
-            <h3>{runEnvironment?.name ? `Saved in ${runEnvironment.name}` : "Saved for this operation"}</h3>
-            {!cases.length ? (
-              <div className="empty">
-                No cases yet. Save the form to add one.
-              </div>
-            ) : cases.map((item) => (
-              <div className="array-item" key={item.id}>
-                <div className="array-toolbar">
-                  <div className="saved-case-meta">
-                    <strong>{item.testName}</strong>
-                    <div className="hint">{item.method} {item.endpoint}</div>
-                  </div>
-                  <SavedCaseActions
-                    testName={item.testName}
-                    running={running === item.id}
-                    runDisabled={!!running}
-                    onRun={() => runSaved(item.id)}
-                    onEdit={() => navigate(`/s/${specId}/op/${encodeURIComponent(operation.key)}/case/${item.id}`)}
-                    onDuplicate={() => openDuplicateModal(item)}
-                    onDelete={() => remove(item.id)}
-                  />
-                </div>
-              </div>
-            ))}
+        {runResult ? (
+          <div className="op-case-run">
+            <RunResultPanel result={runResult} />
           </div>
-          <LastRunsStrip
-            specId={specId}
-            planId={planId}
-            caseId={boundCaseId || undefined}
-            environmentId={runEnvironment?.id}
-            environmentReady={environmentReady}
-            refreshKey={historyKey}
-          />
-        </div>
+        ) : null}
       </div>
     </div>
     {importOpen ? (
@@ -1102,40 +1069,6 @@ function blankNa(value) {
   return String(value).trim().toUpperCase() === "NA" ? "" : value;
 }
 
-function defaultDuplicateName(testName) {
-  const base = String(testName || "Untitled").trim() || "Untitled";
-  if (/^copy of /i.test(base)) {
-    return `${base} (2)`;
-  }
-  return `Copy of ${base}`;
-}
-
-function caseUpdateFromView(item, patch, environmentId) {
-  return {
-    specId: item.specId,
-    planId: item.planId,
-    operationKey: item.operationKey,
-    testName: item.testName,
-    pathParams: item.pathParams,
-    queryParams: item.queryParams,
-    headers: item.headers,
-    cookieParams: item.cookieParams,
-    requestBody: item.requestBody,
-    statusCode: item.statusCode,
-    responseType: item.responseType,
-    expectedResponse: item.expectedResponse,
-    enabled: item.enabled,
-    testGroup: item.testGroup,
-    jsonPathAssertions: item.jsonPathAssertions,
-    extracts: item.extracts,
-    maxResponseTimeMs: item.maxResponseTimeMs,
-    contentType: item.contentType,
-    baseUrl: item.baseUrl,
-    environmentId,
-    ...patch
-  };
-}
-
 function blankOperationCase(operation, spec) {
   const form = formFromOperation(operation, spec);
   form.contentType = matchedContentType(form.contentType, operation.requestContentTypes) || form.contentType;
@@ -1152,10 +1085,10 @@ function formFromOperation(operation, spec) {
   const defaults = operation.defaults || {};
   const statusCode = operation.response ? operation.response.statusCode : 200;
   return {
-    testName: `${operation.summary || operation.key} — ${statusCode}`,
+    testName: "",
     testGroup: defaults.testGroup || operation.tag || "generated",
     baseUrl: defaults.baseUrl || spec.baseUrl || "",
-    enabled: defaults.enabled || "Y",
+    enabled: "Y",
     statusCode,
     responseType: defaults.responseType && defaults.responseType !== "NA" ? defaults.responseType : "NONE",
     maxResponseTimeMs: defaults.maxResponseTimeMs || 3000,
@@ -1201,22 +1134,39 @@ function mapParams(parameters, location) {
   return result;
 }
 
-function Field({ id, label, value, onChange, type = "text", hint, required, invalid = false }) {
+function operationHeaderExtras(operation) {
+  const method = String(operation?.method || "").trim().toLowerCase();
+  const key = String(operation?.key || "").trim();
+  const summary = String(operation?.summary || "").trim();
+  const keyNorm = key.toLowerCase();
+  const summaryNorm = summary.toLowerCase();
+
+  const showKey = Boolean(key) && keyNorm !== method && keyNorm !== summaryNorm;
+  const showSummary = Boolean(summary) && summaryNorm !== method && summaryNorm !== keyNorm;
+  return { showKey, showSummary };
+}
+
+function Field({ id, label, value, onChange, type = "text", hint, placeholder, required, invalid = false, className = "" }) {
   return (
-    <div className={`field${invalid ? " field-missing" : ""}`} id={id}>
+    <div className={`field${invalid ? " field-missing" : ""}${className ? ` ${className}` : ""}`} id={id}>
       <label>
         {label}
         {required ? <span className="req">*</span> : null}
         {hint ? <span className="hint">{hint}</span> : null}
       </label>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+      <input
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </div>
   );
 }
 
-function SelectField({ label, value, options, onChange }) {
+function SelectField({ label, value, options, onChange, className = "" }) {
   return (
-    <div className="field">
+    <div className={`field${className ? ` ${className}` : ""}`}>
       <label>{label}</label>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => {

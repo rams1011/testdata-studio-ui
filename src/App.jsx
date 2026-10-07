@@ -6,6 +6,7 @@ import AdminPage from "./pages/AdminPage";
 import SubscriptionsPage from "./pages/SubscriptionsPage";
 import StudioLayout, { FirstOperationRedirect } from "./pages/StudioLayout";
 import OperationPage from "./pages/OperationPage";
+import OperationEntry from "./pages/OperationEntry";
 import CasesPage from "./pages/CasesPage";
 import ExportPage from "./pages/ExportPage";
 import HistoryPage from "./pages/HistoryPage";
@@ -25,8 +26,9 @@ const router = createBrowserRouter([
         element: <StudioLayout />,
         children: [
           { index: true, element: <FirstOperationRedirect /> },
-          { path: "op/:operationKey", element: <OperationPage /> },
+          { path: "op/:operationKey/new", element: <OperationPage /> },
           { path: "op/:operationKey/case/:caseId", element: <OperationPage /> },
+          { path: "op/:operationKey", element: <OperationEntry /> },
           { path: "cases", element: <CasesPage /> },
           { path: "history", element: <HistoryPage /> },
           { path: "export", element: <ExportPage /> }

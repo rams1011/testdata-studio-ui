@@ -1,6 +1,6 @@
-export default function Collapsible({ title, hint, defaultOpen = false, children }) {
+export default function Collapsible({ title, hint, defaultOpen = false, className = "", children }) {
   return (
-    <details className="card fold-card" defaultOpen={defaultOpen}>
+    <details className={`card fold-card${className ? ` ${className}` : ""}`} defaultOpen={defaultOpen}>
       <summary>
         {title}
         {hint ? <span className="hint">{hint}</span> : null}

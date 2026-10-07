@@ -411,7 +411,7 @@ function FileField({ caseId, onEnsureCase, schema, path, name, required, value, 
       });
       onChange(next);
       if (onFileCommitted) {
-        await onFileCommitted(next, id);
+        await onFileCommitted(next, id, { caseUpdatedAt: uploaded.caseUpdatedAt });
       }
     } catch (exception) {
       setError(exception.message || "Upload failed");
@@ -424,7 +424,7 @@ function FileField({ caseId, onEnsureCase, schema, path, name, required, value, 
     const next = setPath(value, path, null);
     onChange(next);
     if (onFileCommitted) {
-      await onFileCommitted(next, caseId);
+      await onFileCommitted(next, caseId, null);
     }
   }
 
