@@ -19,10 +19,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate deploy configuration
+        run: |
+          missing=0
+          if [ -z "${{ vars.GCP_PROJECT_ID }}" ]; then
+            echo "::error::Set repository variable GCP_PROJECT_ID (Settings → Actions → Variables)."
+            missing=1
+          fi
+          if [ -z "${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}" ]; then
+            echo "::error::Set repository variable GCP_WORKLOAD_IDENTITY_PROVIDER."
+            missing=1
+          fi
+          if [ -z "${{ vars.GCP_SERVICE_ACCOUNT }}" ]; then
+            echo "::error::Set repository variable GCP_SERVICE_ACCOUNT."
+            missing=1
+          fi
+          if [ -z "${{ vars.STUDIO_API_URL }}" ]; then
+            echo "::notice::STUDIO_API_URL is not set; deploy will call gcloud run services describe testdata-studio. Set STUDIO_API_URL to skip that call (recommended)."
+          fi
+          exit "$missing"
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
         with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
           token_format: access_token
@@ -43,13 +64,24 @@ jobs:
 
       - name: Studio API URL
         id: api
+        env:
+          STUDIO_API_URL: ${{ vars.STUDIO_API_URL }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
         run: |
-          if [ -n "${{ vars.STUDIO_API_URL }}" ]; then
-            echo "url=${{ vars.STUDIO_API_URL }}" >> "$GITHUB_OUTPUT"
-          else
-            url="$(gcloud run services describe testdata-studio --region="${REGION}" --format='value(status.url)')"
-            echo "url=${url}" >> "$GITHUB_OUTPUT"
+          if [ -n "$STUDIO_API_URL" ]; then
+            echo "url=${STUDIO_API_URL%/}" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          set -e
+          url="$(gcloud run services describe testdata-studio \
+            --project="$GCP_PROJECT_ID" \
+            --region="$REGION" \
+            --format='value(status.url)')"
+          if [ -z "$url" ]; then
+            echo "::error::Could not resolve testdata-studio URL. Set repository variable STUDIO_API_URL to the API Cloud Run URL."
+            exit 1
+          fi
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -69,6 +101,7 @@ jobs:
         uses: google-github-actions/deploy-cloudrun@v2
         id: ui
         with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
           service: testdata-studio-ui
           image: ${{ steps.prefix.outputs.value }}/testdata-studio-ui:${{ github.sha }}
           region: ${{ env.REGION }}
