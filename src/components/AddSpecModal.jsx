@@ -100,7 +100,7 @@ export default function AddSpecModal({
       return;
     }
     if (source === "url" && !url.trim()) {
-      toast("Enter a spec URL or file path", true);
+      toast("Enter a spec URL", true);
       return;
     }
     if (source === "paste" && !paste.trim()) {
@@ -187,16 +187,23 @@ export default function AddSpecModal({
             {source === "url" ? (
               <div className="field">
                 <label htmlFor="new-spec-url">
-                  Spec URL or local file path <span className="req">*</span>
+                  Spec URL <span className="req">*</span>
                 </label>
                 <input
                   id="new-spec-url"
                   ref={urlRef}
+                  type="url"
+                  inputMode="url"
+                  autoComplete="url"
                   value={url}
                   disabled={loading}
                   onChange={(event) => setUrl(event.target.value)}
                   placeholder="https://petstore.swagger.io/v2/swagger.json"
                 />
+                <div className="hint">
+                  http(s) link to the OpenAPI document. Use the <strong>File</strong> tab to choose a document from
+                  this computer — the URL field cannot browse your disk.
+                </div>
               </div>
             ) : null}
             {source === "paste" ? (
