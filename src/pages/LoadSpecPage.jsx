@@ -19,6 +19,7 @@ export default function LoadSpecPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [addSpecSource, setAddSpecSource] = useState(null);
+  const [addEmptyCatalog, setAddEmptyCatalog] = useState(false);
   const [startWithoutOpenApiOpen, setStartWithoutOpenApiOpen] = useState(false);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
@@ -506,16 +507,20 @@ export default function LoadSpecPage() {
           apiDown={apiDown}
           onClose={() => setStartWithoutOpenApiOpen(false)}
           onCreated={onRestCatalogStarted}
-          onCreateEmptyCatalog={() => setAddSpecSource("rest")}
+          onCreateEmptyCatalog={() => setAddEmptyCatalog(true)}
         />
       ) : null}
-      {addSpecSource && !saasLocked ? (
+      {(addSpecSource || addEmptyCatalog) && !saasLocked ? (
         <AddSpecModal
-          open={!!addSpecSource}
-          initialSource={addSpecSource}
+          open={!!addSpecSource || addEmptyCatalog}
+          initialSource={addSpecSource || "url"}
+          emptyCatalog={addEmptyCatalog}
           labelCatalog={backend.specs}
           apiDown={apiDown}
-          onClose={() => setAddSpecSource(null)}
+          onClose={() => {
+            setAddSpecSource(null);
+            setAddEmptyCatalog(false);
+          }}
           onCreated={onSpecCreated}
         />
       ) : null}
