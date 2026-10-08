@@ -6,6 +6,7 @@ import { useToast } from "./Toast";
 export default function AddSpecModal({
   open,
   initialSource = "url",
+  emptyCatalog = false,
   labelCatalog = [],
   apiDown = false,
   onClose,
@@ -13,6 +14,8 @@ export default function AddSpecModal({
 }) {
   const { toast } = useToast();
   const nameRef = useRef(null);
+  const urlRef = useRef(null);
+  const pasteRef = useRef(null);
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
   const [label, setLabel] = useState("");
@@ -24,7 +27,7 @@ export default function AddSpecModal({
 
   useEffect(() => {
     if (!open) return;
-    setSource(initialSource);
+    setSource(emptyCatalog ? "url" : initialSource);
     setUrl("");
     setName("");
     setLabel("");
@@ -32,7 +35,15 @@ export default function AddSpecModal({
     setPaste("");
     setDragging(false);
     setLoading(false);
-    nameRef.current?.focus();
+    if (emptyCatalog) {
+      nameRef.current?.focus();
+    } else if (initialSource === "paste") {
+      pasteRef.current?.focus();
+    } else if (initialSource === "url") {
+      urlRef.current?.focus();
+    } else {
+      nameRef.current?.focus();
+    }
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function onKey(event) {
@@ -45,7 +56,7 @@ export default function AddSpecModal({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, initialSource, onClose, loading]);
+  }, [open, initialSource, emptyCatalog, onClose, loading]);
 
   if (!open) {
     return null;
@@ -64,13 +75,30 @@ export default function AddSpecModal({
   }
 
   function finish(spec) {
-    onCreated?.(spec, { source });
+    onCreated?.(spec, { source: emptyCatalog ? "rest" : source });
     onClose();
   }
 
   async function load() {
     const specName = requireName();
     if (!specName) return;
+    if (emptyCatalog) {
+      setLoading(true);
+      try {
+        const spec = await Api.loadSpec({
+          name: specName,
+          label: label.trim(),
+          baseUrl: baseUrl.trim() || null,
+          manual: true
+        });
+        finish(spec);
+      } catch (error) {
+        toast(error.message, true);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (source === "url" && !url.trim()) {
       toast("Enter a spec URL or file path", true);
       return;
@@ -90,8 +118,7 @@ export default function AddSpecModal({
         label: label.trim(),
         location: source === "url" ? (url.trim() || null) : null,
         content: source === "paste" ? (paste.trim() || null) : null,
-        baseUrl: baseUrl.trim() || null,
-        manual: source === "rest" ? true : undefined
+        baseUrl: baseUrl.trim() || null
       });
       finish(spec);
     } catch (error) {
@@ -131,13 +158,93 @@ export default function AddSpecModal({
         aria-labelledby="add-spec-title"
       >
         <div className="card-head">
-          <h3 id="add-spec-title">{source === "rest" ? "Add REST APIs" : "Add a spec"}</h3>
+          <h3 id="add-spec-title">{emptyCatalog ? "Empty REST catalog" : "Add a spec"}</h3>
           <button type="button" className="btn" disabled={loading} onClick={onClose}>
             Cancel
           </button>
         </div>
+        {!emptyCatalog ? (
+          <>
+            <div className="source-tabs" role="tablist" aria-label="How to provide the OpenAPI document">
+              {[
+                ["url", "URL"],
+                ["file", "File"],
+                ["paste", "Paste"]
+              ].map(([id, tabLabel]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={source === id}
+                  className={`source-tab ${source === id ? "active" : ""}`}
+                  disabled={loading}
+                  onClick={() => setSource(id)}
+                >
+                  {tabLabel}
+                </button>
+              ))}
+            </div>
+            {source === "url" ? (
+              <div className="field">
+                <label htmlFor="new-spec-url">
+                  Spec URL or local file path <span className="req">*</span>
+                </label>
+                <input
+                  id="new-spec-url"
+                  ref={urlRef}
+                  value={url}
+                  disabled={loading}
+                  onChange={(event) => setUrl(event.target.value)}
+                  placeholder="https://petstore.swagger.io/v2/swagger.json"
+                />
+              </div>
+            ) : null}
+            {source === "paste" ? (
+              <div className="field">
+                <label htmlFor="new-spec-paste">
+                  OpenAPI JSON or YAML <span className="req">*</span>
+                </label>
+                <textarea
+                  id="new-spec-paste"
+                  ref={pasteRef}
+                  value={paste}
+                  disabled={loading}
+                  onChange={(event) => setPaste(event.target.value)}
+                  placeholder="Paste the spec here"
+                />
+              </div>
+            ) : null}
+            {source === "file" ? (
+              <div
+                className={`drop ${dragging ? "drag" : ""}`}
+                onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+                onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+                onDragLeave={(event) => { event.preventDefault(); setDragging(false); }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragging(false);
+                  const file = event.dataTransfer.files[0];
+                  if (file) upload(file);
+                }}
+              >
+                <strong>
+                  OpenAPI file <span className="req">*</span>
+                </strong>
+                <div className="hint">Drop JSON, YAML, or YML — or choose a file below</div>
+                <input
+                  type="file"
+                  accept=".json,.yaml,.yml"
+                  disabled={loading}
+                  onChange={(event) => event.target.files[0] && upload(event.target.files[0])}
+                />
+              </div>
+            ) : null}
+          </>
+        ) : null}
         <div className="field">
-          <label htmlFor="new-spec-name">Name <span className="req">*</span></label>
+          <label htmlFor="new-spec-name">
+            {emptyCatalog ? "Catalog name" : "Spec name"} <span className="req">*</span>
+          </label>
           <input
             id="new-spec-name"
             ref={nameRef}
@@ -145,12 +252,12 @@ export default function AddSpecModal({
             autoComplete="off"
             disabled={loading}
             onChange={(event) => setName(event.target.value)}
-            placeholder="e.g. HRM local"
+            placeholder={emptyCatalog ? "e.g. My APIs" : "e.g. HRM local"}
           />
           <div className="hint">
-            {source === "rest"
-              ? "Must be unique. This catalog holds REST APIs you add by method and path."
-              : "Must be unique. This is your name for the spec — not the OpenAPI title."}
+            {emptyCatalog
+              ? "Must be unique in this workspace."
+              : "Must be unique. Your name for this API in Studio — not the OpenAPI title."}
           </div>
         </div>
         <LabelField
@@ -158,92 +265,37 @@ export default function AddSpecModal({
           value={label}
           onChange={setLabel}
           suggestions={uniqueLabels(labelCatalog)}
+          hint="Optional. Groups specs on the home page (defaults to General)."
         />
         <div className="field">
-          <label>API base URL</label>
+          <label htmlFor="new-spec-base-url">API base URL</label>
           <input
+            id="new-spec-base-url"
             value={baseUrl}
             disabled={loading}
             onChange={(event) => setBaseUrl(event.target.value)}
-            placeholder="Optional override, e.g. http://localhost:8080"
+            placeholder="Optional, e.g. http://localhost:8080"
           />
+          <div className="hint">
+            {emptyCatalog
+              ? "Default base URL for requests in this catalog."
+              : "Overrides servers from the OpenAPI document when set."}
+          </div>
         </div>
-        <div className="source-tabs" role="tablist">
-          {[
-            ["rest", "REST"],
-            ["url", "URL"],
-            ["file", "File"],
-            ["paste", "Paste"]
-          ].map(([id, tabLabel]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={source === id}
-              className={`source-tab ${source === id ? "active" : ""}`}
-              disabled={loading}
-              onClick={() => setSource(id)}
-            >
-              {tabLabel}
-            </button>
-          ))}
-        </div>
-        {source === "rest" ? (
+        {emptyCatalog ? (
           <p className="hint" style={{ marginTop: 0 }}>
-            Creates an empty REST catalog only. On the home page, use <strong>Start without OpenAPI</strong> to add your first API and open the case editor in one step.
+            No APIs yet — use <strong>Add API</strong> in the studio after you open this catalog.
           </p>
         ) : null}
-        {source === "url" ? (
-          <div className="field">
-            <label>Spec URL or local file path</label>
-            <input
-              value={url}
-              disabled={loading}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://petstore.swagger.io/v2/swagger.json"
-            />
-          </div>
-        ) : null}
-        {source === "paste" ? (
-          <div className="field">
-            <label>OpenAPI JSON or YAML</label>
-            <textarea
-              value={paste}
-              disabled={loading}
-              onChange={(event) => setPaste(event.target.value)}
-              placeholder="Paste the spec here"
-            />
-          </div>
-        ) : null}
-        {source === "file" ? (
-          <div
-            className={`drop ${dragging ? "drag" : ""}`}
-            onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
-            onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-            onDragLeave={(event) => { event.preventDefault(); setDragging(false); }}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragging(false);
-              const file = event.dataTransfer.files[0];
-              if (file) upload(file);
-            }}
-          >
-            <strong>Drop a Swagger or OpenAPI file</strong>
-            <div className="hint">JSON, YAML, or YML — or choose a file</div>
-            <input
-              type="file"
-              accept=".json,.yaml,.yml"
-              disabled={loading}
-              onChange={(event) => event.target.files[0] && upload(event.target.files[0])}
-            />
-          </div>
-        ) : (
+        {source !== "file" || emptyCatalog ? (
           <div className="actions">
             <button type="button" className="btn primary" onClick={load} disabled={loading || apiDown}>
-              {loading ? (source === "rest" ? "Creating…" : "Loading…") : source === "rest" ? "Create catalog" : "Load spec"}
+              {loading
+                ? (emptyCatalog ? "Creating…" : "Loading…")
+                : (emptyCatalog ? "Create catalog" : "Load spec")}
             </button>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
