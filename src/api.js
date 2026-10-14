@@ -83,16 +83,19 @@ function authHeaders() {
 }
 
 async function request(path, options = {}) {
-  const headers = { ...authHeaders(), ...(options.headers || {}) };
-  if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+  const { background = false, ...fetchOptions } = options;
+  const headers = { ...authHeaders(), ...(fetchOptions.headers || {}) };
+  if (fetchOptions.body && !(fetchOptions.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
 
-  beginRequest();
+  if (!background) {
+    beginRequest();
+  }
   try {
     let response;
     try {
-      response = await fetch(apiUrl(path), { ...options, headers });
+      response = await fetch(apiUrl(path), { ...fetchOptions, headers });
     } catch {
       throw new Error(`Cannot reach API at ${API_DISPLAY}. Start testdata-generator-api at ${API_PROXY_TARGET}.`);
     }
@@ -109,7 +112,9 @@ async function request(path, options = {}) {
     }
     return body;
   } finally {
-    endRequest();
+    if (!background) {
+      endRequest();
+    }
   }
 }
 
@@ -294,8 +299,8 @@ export const Api = {
     return request(`/api/specs/${encodeURIComponent(specId)}`, { method: "DELETE" });
   },
 
-  getSpec(specId) {
-    return request(`/api/specs/${encodeURIComponent(specId)}`);
+  getSpec(specId, { background = false } = {}) {
+    return request(`/api/specs/${encodeURIComponent(specId)}`, { background });
   },
 
   listOperations(specId) {
@@ -360,13 +365,13 @@ export const Api = {
     return request(`/api/testdata/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) });
   },
 
-  getCase(id, environmentId) {
+  getCase(id, environmentId, { background = false } = {}) {
     const query = new URLSearchParams();
     if (environmentId) {
       query.set("environmentId", environmentId);
     }
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return request(`/api/testdata/${encodeURIComponent(id)}${suffix}`);
+    return request(`/api/testdata/${encodeURIComponent(id)}${suffix}`, { background });
   },
 
   listCaseAudit(caseId, limit = 20) {

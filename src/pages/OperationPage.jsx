@@ -166,7 +166,7 @@ export default function OperationPage() {
     let cancelled = false;
     async function poll() {
       try {
-        const remote = await Api.getCase(boundCaseId, runEnvironment?.id);
+        const remote = await Api.getCase(boundCaseId, runEnvironment?.id, { background: true });
         if (cancelled || !remote?.updatedAt) {
           return;
         }
