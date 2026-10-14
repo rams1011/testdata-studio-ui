@@ -79,7 +79,7 @@ export default function StudioLayout() {
     }
     async function poll() {
       try {
-        const remote = await Api.getSpec(specId);
+        const remote = await Api.getSpec(specId, { background: true });
         if (cancelled || !remote?.updatedAt) {
           return;
         }
