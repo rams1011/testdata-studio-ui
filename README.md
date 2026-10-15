@@ -27,7 +27,43 @@ Open [http://localhost:5173](http://localhost:5173). The home page checks `GET /
 
 In the app, open the **help** icon (? in a circle) at the top right before the account menu; it opens `/guide` in a **new tab** so your spec stays open.
 
-Hosting is one API setting: `TESTDATA_EDITION=local|datacenter|saas` (blank is `datacenter`). `datacenter` requires sign in and shows **Admin**, but hides **Plan**. Accounts are created by an administrator.
+Hosting is one API setting: `TESTDATA_EDITION=local|datacenter|saas`. If the variable is blank, the API defaults to `datacenter`; the shipped `application.yml` default is `local` for desktop dev.
+
+| `TESTDATA_EDITION` | Login | Plan (billing) | UI |
+|--------------------|-------|----------------|-----|
+| `local` | No | No | No sign-in, no **Admin** |
+| `datacenter` | Yes | No | Sign-in, **Admin**, no self-registration |
+| `saas` | Yes | Yes | Sign-in, register trial, subscriptions |
+
+`GET /api/testdata/config` drives the home page and login gate (`edition`, `loginRequired`, `plansEnabled`, `authProvider`, `loginHint` when LDAP is on).
+
+### Sign-in (`datacenter` / `saas`)
+
+| UI action | API |
+|-----------|-----|
+| Sign in | `POST /api/auth/login` (`email`, `password` — for LDAP, `email` is username or `user@domain`) |
+| Register (SaaS only) | `POST /api/auth/register` |
+| Session / gate | `GET /api/auth/session` |
+| Sign out | `POST /api/auth/logout` |
+| Switch workspace | `POST /api/auth/switch-tenant` |
+| Admin: list / add / change / remove members | `GET` `POST` `PUT` `DELETE /api/tenants/current/members` |
+
+After login the UI stores the session token and tenant id in `sessionStorage` and sends `Authorization: Bearer …` and optional `X-Tenant-Id` on API calls.
+
+**Password auth** (`TESTDATA_AUTH_PROVIDER=local`, default): bootstrap operator from `TESTDATA_SAAS_ADMIN_EMAIL` / `TESTDATA_SAAS_ADMIN_PASSWORD`. In datacenter, admins add people from **Admin** (local password) or attach an existing account by email.
+
+**LDAP** (`TESTDATA_AUTH_PROVIDER=ldap`): the API binds to the client directory at login; the browser never talks to LDAP. Minimal config is URL + domain:
+
+```bash
+TESTDATA_EDITION=datacenter
+TESTDATA_AUTH_PROVIDER=ldap
+TESTDATA_LDAP_URL=ldaps://ldap.client.com:636
+TESTDATA_LDAP_DOMAIN=client.com
+```
+
+Optional: `TESTDATA_LDAP_MANAGER_DN`, `TESTDATA_LDAP_MANAGER_PASSWORD`, `TESTDATA_LDAP_ALLOWED_GROUP`, group→role DNs, `TESTDATA_AUTH_LOCAL_ADMIN_FALLBACK=true` (bootstrap admin can still sign in with the local password if the directory is down). Full property list is in the [Test Data Generator API README](../swagger-testdata-generator/README.md) and `testdata-generator-api/src/main/resources/application.yml`.
+
+When LDAP is on, the login page uses a **Username** field (`loginHint` from config), hides SaaS registration, and **Admin** only adds people who have already signed in once (no new password accounts).
 
 | UI action | API |
 |-----------|-----|

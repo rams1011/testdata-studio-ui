@@ -16,12 +16,16 @@ export default function LoginPage() {
   const [workspace, setWorkspace] = useState("");
   const [busy, setBusy] = useState(false);
   const [billing, setBilling] = useState(true);
+  const [authProvider, setAuthProvider] = useState("local");
+  const [loginHint, setLoginHint] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([Api.config(), Api.session()])
       .then(([config, session]) => {
         if (cancelled) return;
+        setAuthProvider(String(config?.authProvider || "local").toLowerCase());
+        setLoginHint(config?.loginHint || "");
         const nextBilling = isBillingEnabled(session, config);
         setBilling(nextBilling);
         if (!nextBilling) {
@@ -39,7 +43,8 @@ export default function LoginPage() {
     };
   }, [navigate]);
 
-  const register = billing && mode === "register";
+  const ldap = authProvider === "ldap";
+  const register = billing && mode === "register" && !ldap;
 
   async function submit(event) {
     event.preventDefault();
@@ -74,9 +79,11 @@ export default function LoginPage() {
         </div>
       </div>
       <p>
-        {billing
-          ? "Sign in to a workspace. Specs, collections, and environments stay private to that tenant."
-          : "Sign in with the account your administrator created. Specs stay private to your workspace."}
+        {ldap
+          ? "Sign in with your company directory account. Specs stay private to your workspace."
+          : billing
+            ? "Sign in to a workspace. Specs, collections, and environments stay private to that tenant."
+            : "Sign in with the account your administrator created. Specs stay private to your workspace."}
       </p>
       <form className="card login-card" onSubmit={submit}>
         <h3>{register ? "Create an organization" : "Sign in"}</h3>
@@ -87,13 +94,20 @@ export default function LoginPage() {
           </div>
         ) : null}
         <div className="field">
-          <label htmlFor="signup-email">Email</label>
-          <input id="signup-email" type="email" required value={email}
-            onChange={(event) => setEmail(event.target.value)} autoComplete="email" />
+          <label htmlFor="signup-email">{ldap ? "Username" : "Email"}</label>
+          <input
+            id="signup-email"
+            type={ldap ? "text" : "email"}
+            required
+            value={email}
+            placeholder={ldap ? (loginHint || "you@company.com") : undefined}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete={ldap ? "username" : "email"}
+          />
         </div>
         <div className="field">
           <label htmlFor="signup-password">Password</label>
-          <input id="signup-password" type="password" required minLength={8} value={password}
+          <input id="signup-password" type="password" required minLength={ldap ? 1 : 8} value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete={register ? "new-password" : "current-password"} />
           {register ? <div className="hint">At least 8 characters. Stored hashed, never in specs.</div> : null}
@@ -112,7 +126,9 @@ export default function LoginPage() {
             {busy ? "Please wait…" : register ? "Start trial" : "Sign in"}
           </button>
         </div>
-        {billing ? (
+        {ldap ? (
+          <p className="hint">Use the same username and password as your company directory.</p>
+        ) : billing ? (
           <p className="hint">
             {register ? (
               <button type="button" className="linkish" onClick={() => setMode("login")}>
