@@ -8,7 +8,11 @@ import ExtractValueField, { PlanExtractsProvider } from "../components/ExtractVa
 import ImportCurlModal from "../components/ImportCurlModal";
 import DuplicateCaseModal from "../components/DuplicateCaseModal";
 import ExpectedResponseEditor from "../components/ExpectedResponseEditor";
-import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
+import AuthSettings, {
+  authCredentialsMissing,
+  environmentRequiresRunAuth,
+  useSpecAuth
+} from "../components/AuthSettings";
 import ValidationSummary from "../components/ValidationSummary";
 import {
   blockerTitle,
@@ -653,6 +657,7 @@ export default function OperationPage() {
   }
 
   const authCue = runResult && !runResult.passed && runResult.actualStatus === 401
+    && environmentRequiresRunAuth(runEnvironment)
     && authCredentialsMissing(auth, runEnvironment?.authType);
   const headerExtras = operationHeaderExtras(operation);
 
