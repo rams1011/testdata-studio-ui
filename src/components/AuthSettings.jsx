@@ -71,9 +71,13 @@ export function normalizeAuthType(value) {
   return AUTH_TYPES.some((item) => item.value === type) ? type : "NONE";
 }
 
+export function environmentRequiresRunAuth(environment) {
+  return normalizeAuthType(environment?.authType) !== "NONE";
+}
+
 export function authCredentialsMissing(auth, environmentAuthType) {
   const type = normalizeAuthType(environmentAuthType || auth?.type);
-  if (type === "NONE") return true;
+  if (type === "NONE") return false;
   if (type === "BEARER") return !String(auth?.token || "").trim();
   if (type === "BASIC") {
     return !String(auth?.username || "").trim() || !String(auth?.password || "").trim();

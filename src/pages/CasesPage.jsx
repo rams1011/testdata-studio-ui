@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Api } from "../api";
-import AuthSettings, { authCredentialsMissing, useSpecAuth } from "../components/AuthSettings";
+import AuthSettings, {
+  authCredentialsMissing,
+  environmentRequiresRunAuth,
+  useSpecAuth
+} from "../components/AuthSettings";
 import ImportCurlModal from "../components/ImportCurlModal";
 import LastRunsStrip from "../components/LastRunsStrip";
 import RunResultPanel, { resultBadge } from "../components/RunResultPanel";
@@ -118,8 +122,26 @@ export default function CasesPage() {
     setSelectedResult(result);
   }
 
+  function blockRunWithoutCredentials() {
+    if (!environmentRequiresRunAuth(runEnvironment)) {
+      return false;
+    }
+    if (!authCredentialsMissing(auth, runEnvironment?.authType)) {
+      return false;
+    }
+    const envLabel = runEnvironment?.name ? ` (${runEnvironment.name})` : "";
+    toast(
+      `Fill in Run authentication before running${envLabel}. This environment requires credentials.`,
+      true
+    );
+    return true;
+  }
+
   async function runOne(id, event) {
     event.stopPropagation();
+    if (blockRunWithoutCredentials()) {
+      return;
+    }
     setRunning(id);
     try {
       const result = await Api.runCase(id, auth, runEnvironment?.id);
@@ -134,6 +156,9 @@ export default function CasesPage() {
   }
 
   async function runPlan() {
+    if (blockRunWithoutCredentials()) {
+      return;
+    }
     setRunning("plan");
     try {
       const result = await Api.runPlan({ specId, planId, auth, environmentId: runEnvironment?.id });
@@ -189,8 +214,10 @@ export default function CasesPage() {
     }
   }
 
+  const runAuthRequired = environmentRequiresRunAuth(runEnvironment);
+  const runAuthEmpty = runAuthRequired && authCredentialsMissing(auth, runEnvironment?.authType);
   const authCue = selectedResult && !selectedResult.passed && selectedResult.actualStatus === 401
-    && authCredentialsMissing(auth, runEnvironment?.authType);
+    && runAuthRequired && authCredentialsMissing(auth, runEnvironment?.authType);
 
   return (
     <div>
@@ -224,6 +251,12 @@ export default function CasesPage() {
         </div>
       </div>
       <AuthSettings auth={auth} onChange={setAuth} environment={runEnvironment} />
+      {runAuthEmpty ? (
+        <div className="status-banner down" style={{ marginTop: 16 }}>
+          {runEnvironment?.name ? `${runEnvironment.name} requires authentication.` : "This environment requires authentication."}
+          {" "}Fill in Run authentication above before Run plan or per-case Run, or requests may return 401.
+        </div>
+      ) : null}
       {authCue ? (
         <div className="status-banner down" style={{ marginTop: 16 }}>
           API returned 401. Add run authentication if this endpoint needs login.
