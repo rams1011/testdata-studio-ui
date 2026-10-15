@@ -21,8 +21,10 @@ export default function AdminPage() {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("MEMBER");
+  const [authProvider, setAuthProvider] = useState("local");
 
   const signedIn = Boolean(session?.authenticated || session?.account);
+  const ldap = authProvider === "ldap";
   const manager = canManageMembers(session);
   const ownerCount = members.filter((member) => member.role === "OWNER").length;
   const canAssignOwner = session?.tenant?.role === "OWNER";
@@ -30,6 +32,15 @@ export default function AdminPage() {
 
   useEffect(() => {
     let cancelled = false;
+    Api.config()
+      .then((config) => {
+        if (!cancelled) {
+          setAuthProvider(String(config?.authProvider || "local").toLowerCase());
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAuthProvider("local");
+      });
     Api.session()
       .then((next) => {
         if (cancelled) return;
@@ -86,7 +97,7 @@ export default function AdminPage() {
     setBusy(true);
     try {
       const payload = { email, name, role };
-      if (password.trim()) {
+      if (!ldap && password.trim()) {
         payload.password = password;
       }
       await Api.addMember(payload);
@@ -200,7 +211,9 @@ export default function AdminPage() {
       </div>
       <p>
         Manage who can open specs in {session.tenant?.name || "this workspace"}.
-        Add a teammate by email — create a login, or attach someone who already has an account.
+        {ldap
+          ? "Add a teammate who has already signed in with the company directory."
+          : "Add a teammate by email — create a login, or attach someone who already has an account."}
       </p>
 
       {forbidden || !manager ? (
@@ -237,18 +250,20 @@ export default function AdminPage() {
                   autoComplete="off"
                 />
               </div>
-              <div className="field">
-                <label htmlFor="member-password">Password</label>
-                <input
-                  id="member-password"
-                  type="password"
-                  minLength={8}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="new-password"
-                />
-                <div className="hint">Required for a new account. Leave blank to add an existing user.</div>
-              </div>
+              {ldap ? null : (
+                <div className="field">
+                  <label htmlFor="member-password">Password</label>
+                  <input
+                    id="member-password"
+                    type="password"
+                    minLength={8}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <div className="hint">Required for a new account. Leave blank to add an existing user.</div>
+                </div>
+              )}
               <div className="field">
                 <label htmlFor="member-role">Role</label>
                 <select id="member-role" value={role} onChange={(event) => setRole(event.target.value)}>
